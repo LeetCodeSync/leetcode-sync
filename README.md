@@ -1,9 +1,19 @@
 # LeetCode GitHub Sync
 
-Chrome extension that syncs accepted LeetCode submissions to a GitHub repository.
+> Chrome extension that syncs accepted LeetCode submissions to a GitHub repository.
 
-## Implementation 
-### Stack
+---
+
+## Overview
+
+LeetCode GitHub Sync is a Chrome Extension built to automatically save accepted LeetCode submissions into a GitHub repository using a simple per-problem folder structure.
+
+Each accepted submission creates a new Git commit, making the repository a clean and traceable history of solved problems.
+
+---
+
+## Architecture
+
 - Chrome Extension, Manifest V3
 - React + TypeScript
 - Vite
@@ -13,30 +23,81 @@ Chrome extension that syncs accepted LeetCode submissions to a GitHub repository
 - GitHub Git Data API
 - One commit per accepted submission
 
-### Flow
-- User configures GitHub client ID and target repository
-- Extension starts GitHub device auth
-- User authorizes on GitHub
-- Extension stores access token locally
-- Content script detects accepted submission on LeetCode
-- Background worker extracts and commits files to GitHub
-- Each accepted submission creates a new commit
+---
 
-### Repository layout sample
+## Sync Flow
+
+1. User configures GitHub client ID and target repository.
+2. Extension starts GitHub device authorization.
+3. User authorizes on GitHub.
+4. Extension stores the access token locally.
+5. Content script detects an accepted submission on LeetCode.
+6. Background worker extracts problem and solution data.
+7. Background worker commits the files to GitHub.
+
+---
+
+## Repository Layout
+
 ```text
 /1-two-sum/
   README.md
   two-sum.py
 ```
 
-### Security constraints
-- No backend
-- Client secret in the extension
-- Token stored in chrome.storage.local 
-- missions limited to LeetCode and GitHub domains
+Example generated files:
 
-### Caveats to keep in mind
-- Auth is weaker than a backend-assisted GitHub App setup 
-- LeetCode parsing is DOM-based and can break if the page changes 
-- Full problem statement extraction is heuristic 
-- Service worker is non-persistent and must tolerate wake/sleep behavior
+- `README.md` contains the problem statement and metadata
+- `two-sum.py` contains the submitted solution
+
+---
+
+## Security Notes
+
+- No backend
+- No client secret embedded in the extension
+- Token stored in `chrome.storage.local`
+- Permissions limited to LeetCode and GitHub domains
+
+---
+
+## Limitations
+
+- Auth is weaker than a backend-assisted GitHub App setup
+- LeetCode parsing is DOM-based and may break if the page changes
+- Full problem statement extraction is heuristic
+- Service worker lifecycle is non-persistent and must tolerate wake/sleep behavior
+
+---
+
+## Status
+
+Current state:
+- TypeScript extension scaffold
+- Popup, options page, and side panel structure
+- Local storage layer
+- GitHub auth flow scaffold
+- Initial sync pipeline design
+
+Planned next:
+- Harden LeetCode DOM extraction
+- Improve deduplication of accepted submission events
+- Add better sync visibility and error reporting
+- Add tests for pure parsing and helper functions
+
+---
+
+## Development
+
+```bash
+npm install
+npm run build
+```
+
+Then load the `dist/` directory as an unpacked extension in Chrome.
+
+---
+
+## License
+
+MIT
