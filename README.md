@@ -2,7 +2,8 @@
 
 Chrome extension that syncs accepted LeetCode submissions to a GitHub repository.
 
-## Stack
+## Implementation 
+### Stack
 - Chrome Extension, Manifest V3
 - React + TypeScript
 - Vite
@@ -12,7 +13,7 @@ Chrome extension that syncs accepted LeetCode submissions to a GitHub repository
 - GitHub Git Data API
 - One commit per accepted submission
 
-## Flow
+### Flow
 - User configures GitHub client ID and target repository
 - Extension starts GitHub device auth
 - User authorizes on GitHub
@@ -21,20 +22,20 @@ Chrome extension that syncs accepted LeetCode submissions to a GitHub repository
 - Background worker extracts and commits files to GitHub
 - Each accepted submission creates a new commit
 
-## Repository layout
+### Repository layout sample
 ```text
 /1-two-sum/
   README.md
   two-sum.py
 ```
 
-## Security
+### Security constraints
 - No backend
 - Client secret in the extension
 - Token stored in chrome.storage.local 
 - missions limited to LeetCode and GitHub domains
 
-## Caveats
+### Caveats to keep in mind
 - Auth is weaker than a backend-assisted GitHub App setup 
 - LeetCode parsing is DOM-based and can break if the page changes 
 - Full problem statement extraction is heuristic 
