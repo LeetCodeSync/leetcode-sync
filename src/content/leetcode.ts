@@ -1,9 +1,11 @@
-function init() {
-  if (!window.location.pathname.startsWith("/problems/")) {
-    return;
-  }
+function isProblemPage(): boolean {
+  return window.location.pathname.startsWith("/problems/");
+}
 
-  console.log("[leetcode-github-sync] content script loaded:", window.location.href);
+function init(): void {
+  if (!isProblemPage()) return;
+
+  console.log("[leetcode-github-sync] content script loaded");
 }
 
 init();
