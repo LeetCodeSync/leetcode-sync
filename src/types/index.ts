@@ -38,6 +38,6 @@ export interface PendingDeviceAuth {
 
 export interface RuntimeResponse<T = unknown> {
     ok: boolean;
-    data?: any;
+    data?: T;
     error?: string;
 }
