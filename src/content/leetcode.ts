@@ -161,12 +161,18 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 }
 
 function isSupportedPage(): boolean {
-  return window.location.pathname.includes("/problems/") &&
-         !window.location.pathname.includes("/submissions/");
+  const path = window.location.pathname;
+
+  return (
+    /^\/problems\/[^/]+\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
+  );
 }
 
 function init(): void {
-    if (!isSupportedPage()) return;
+  if (!isSupportedPage()) return;
 
   const observer = new MutationObserver(() => {
     void trySyncAcceptedSubmission();
