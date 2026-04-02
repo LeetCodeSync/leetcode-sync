@@ -1,4 +1,4 @@
-import type { Difficulty, SubmissionPayload } from "../types";
+import type { Difficulty } from "../types";
 
 export function slugFromUrl(url: string): string {
   const match = url.match(/\/problems\/([^/]+)/);
@@ -17,8 +17,8 @@ export function inferDifficulty(text: string): Difficulty {
 }
 
 export function problemNumberFromTitle(title: string): string {
-  const match = title.match(/^(\d+)\./);
-  return match?.[1] ?? "0";
+  const match = title.match(/^(\d+)\.\s*/);
+  return match?.[1] ?? "";
 }
 
 export function titleWithoutNumber(title: string): string {
@@ -78,16 +78,4 @@ export function splitDescriptionSections(articleText: string): {
     constraintsText,
     followUpText
   };
-}
-
-export function buildSubmissionId(payload: SubmissionPayload): string {
-  const raw = `${payload.problemNumber}:${payload.slug}:${payload.language}:${payload.code.length}:${payload.submittedAt}`;
-  let hash = 0;
-
-  for (let i = 0; i < raw.length; i += 1) {
-    hash = (hash << 5) - hash + raw.charCodeAt(i);
-    hash |= 0;
-  }
-
-  return String(hash);
 }
