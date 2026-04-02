@@ -89,7 +89,7 @@ This choice is intentional and is currently the best practical authentication mo
 
 Current state:
 - TypeScript extension scaffold
-- Popup, options page, and side panel structure
+- Popup, and side panel structure
 - Local storage layer
 - GitHub auth flow scaffold
 - Initial sync pipeline design
