@@ -13,39 +13,33 @@ import {
   pollForAccessToken,
   startDeviceFlow
 } from "../lib/github";
+import { logger } from "../lib/logger";
 import type { SubmissionPayload } from "../types";
 
 let isPolling = false;
 
 async function checkPendingAuth() {
-  console.log("[bg] checkPendingAuth called");
+  logger.debug("background", "checkPendingAuth called");
 
   const settings = await getSettings();
   const pending = await getPendingDeviceAuth();
 
-  console.log("[bg] checkPendingAuth settings", {
-    hasClientId: !!settings.githubClientId
-  });
-  console.log("[bg] checkPendingAuth pending", pending);
-
   if (!settings.githubClientId || !pending) {
-    console.log("[bg] no client id or no pending auth");
     return { ok: true, data: { connected: false, pending: null } };
   }
 
   if (Date.now() >= pending.expiresAt) {
-    console.log("[bg] pending auth expired");
+    logger.info("background", "pending auth expired");
     await clearPendingDeviceAuth();
     return { ok: true, data: { connected: false, pending: null } };
   }
 
   const session = await pollForAccessToken(settings.githubClientId, pending);
-  console.log("[bg] pollForAccessToken result", session);
 
   if (session) {
     await saveAuthSession(session);
     await clearPendingDeviceAuth();
-    console.log("[bg] auth session saved");
+    logger.info("background", "auth session saved");
 
     return {
       ok: true,
@@ -56,8 +50,7 @@ async function checkPendingAuth() {
     };
   }
 
-  console.log("[bg] still pending");
-
+  logger.debug("background", "auth still pending");
   return {
     ok: true,
     data: {
@@ -88,6 +81,11 @@ async function beginDeviceAuth() {
   };
 
   await savePendingDeviceAuth(pending);
+  logger.info("background", "device auth started", {
+    verificationUri: pending.verificationUri,
+    userCode: pending.userCode
+  });
+
   void pollUntilAuthorized();
 
   return { ok: true, data: pending };
@@ -112,6 +110,7 @@ async function pollUntilAuthorized() {
       if (session) {
         await saveAuthSession(session);
         await clearPendingDeviceAuth();
+        logger.info("background", "polling flow completed auth");
         return;
       }
 
@@ -121,37 +120,40 @@ async function pollUntilAuthorized() {
     }
 
     await clearPendingDeviceAuth();
+    logger.warn("background", "pending auth expired during polling");
   } finally {
     isPolling = false;
   }
 }
 
 async function syncSubmission(submission: SubmissionPayload) {
-  console.log("[bg] syncSubmission called", submission);
+  logger.info("background", "syncSubmission called", {
+    slug: submission.slug,
+    language: submission.language,
+    problemNumber: submission.problemNumber
+  });
 
   const settings = await getSettings();
   const session = await getAuthSession();
 
-  console.log("[bg] settings", {
-    repoOwner: settings.repoOwner,
-    repoName: settings.repoName,
-    repoBranch: settings.repoBranch,
-    autoSyncAcceptedOnly: settings.autoSyncAcceptedOnly
+  logger.debug("background", "repo config", {
+    owner: settings.repoOwner,
+    repo: settings.repoName,
+    branch: settings.repoBranch
   });
-  console.log("[bg] has token", !!session?.accessToken);
 
   if (!session?.accessToken) {
-    console.log("[bg] no token");
+    logger.warn("background", "no GitHub token available");
     return { ok: false, error: "GitHub is not connected" };
   }
 
   if (!settings.repoOwner || !settings.repoName || !settings.repoBranch) {
-    console.log("[bg] repo settings incomplete");
+    logger.warn("background", "repository settings are incomplete");
     return { ok: false, error: "Repository settings are incomplete" };
   }
 
   if (settings.autoSyncAcceptedOnly && !submission.accepted) {
-    console.log("[bg] skipped because submission is not accepted");
+    logger.info("background", "submission skipped because not accepted");
     return { ok: true };
   }
 
@@ -162,12 +164,10 @@ async function syncSubmission(submission: SubmissionPayload) {
       submission
     });
 
-    console.log("[bg] commit success", result);
-
+    logger.info("background", "commit success", result);
     return { ok: true, data: result };
   } catch (error) {
-    console.error("[bg] commit failed", error);
-
+    logger.error("background", "commit failed", error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Unknown sync failure"
@@ -176,7 +176,7 @@ async function syncSubmission(submission: SubmissionPayload) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  console.log("[bg] message received", message);
+  logger.debug("background", "message received", message);
 
   (async () => {
     try {
@@ -187,6 +187,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "SAVE_SETTINGS") {
         await saveSettings(message.payload);
+        logger.info("background", "settings saved");
         sendResponse({ ok: true });
         return;
       }
@@ -217,6 +218,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === "DISCONNECT_GITHUB") {
         await clearAuthSession();
         await clearPendingDeviceAuth();
+        logger.info("background", "GitHub disconnected");
         sendResponse({ ok: true });
         return;
       }
@@ -228,8 +230,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       sendResponse({ ok: false, error: "Unsupported message" });
     } catch (error) {
-      console.error("[bg] handler failed", error);
-
+      logger.error("background", "message handler failed", error);
       sendResponse({
         ok: false,
         error: error instanceof Error ? error.message : "Unknown error"
