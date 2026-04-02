@@ -8,7 +8,11 @@ import {
   savePendingDeviceAuth,
   saveSettings
 } from "../lib/storage";
-import { commitSubmission, pollForAccessToken, startDeviceFlow } from "../lib/github";
+import {
+  commitSubmission,
+  pollForAccessToken,
+  startDeviceFlow
+} from "../lib/github";
 import type { SubmissionPayload } from "../types";
 
 let isPolling = false;
@@ -31,7 +35,14 @@ async function checkPendingAuth() {
   if (session) {
     await saveAuthSession(session);
     await clearPendingDeviceAuth();
-    return { ok: true, data: { connected: true, pending: null } };
+
+    return {
+      ok: true,
+      data: {
+        connected: true,
+        pending: null
+      }
+    };
   }
 
   return {
@@ -150,18 +161,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "GET_AUTH_STATE") {
         const session = await getAuthSession();
-        const pending = await getPendingDeviceAuth();
 
         if (session?.accessToken) {
-            sendResponse({
-              ok: true,
-              data: {
-                connected: !!session?.accessToken,
-                pending
-              }
-            });
-            return;
-          }
+          sendResponse({
+            ok: true,
+            data: {
+              connected: true,
+              pending: null
+            }
+          });
+          return;
+        }
+
         sendResponse(await checkPendingAuth());
         return;
       }
