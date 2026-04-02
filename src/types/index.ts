@@ -1,8 +1,7 @@
 export interface ExtensionSettings {
   githubClientId: string;
   githubScope: "public_repo" | "repo";
-  repoOwner: string;
-  repoName: string;
+  repositoryUrl: string;
   repoBranch: string;
   autoSyncAcceptedOnly: boolean;
 }

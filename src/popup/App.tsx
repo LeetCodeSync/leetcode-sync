@@ -14,8 +14,7 @@ type AuthState = {
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",
   githubScope: "repo",
-  repoOwner: "",
-  repoName: "",
+  repositoryUrl: "",
   repoBranch: "main",
   autoSyncAcceptedOnly: true
 };
@@ -230,22 +229,14 @@ export default function App() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="repoOwner">Repository owner</label>
+            <label htmlFor="repositoryUrl">Repository URL</label>
             <input
-              id="repoOwner"
-              value={settings.repoOwner}
-              onChange={(event) => updateSetting("repoOwner", event.target.value)}
-              placeholder="pshynin"
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="repoName">Repository name</label>
-            <input
-              id="repoName"
-              value={settings.repoName}
-              onChange={(event) => updateSetting("repoName", event.target.value)}
-              placeholder="leetcode-private"
+              id="repositoryUrl"
+              value={settings.repositoryUrl}
+              onChange={(event) =>
+                updateSetting("repositoryUrl", event.target.value)
+              }
+              placeholder="https://github.com/your-name/your-repo"
             />
           </div>
 
@@ -262,9 +253,7 @@ export default function App() {
           <div className="row-between" style={{ marginTop: 8 }}>
             <div>
               <h3>Sync accepted submissions only</h3>
-              <p className="muted">
-                Recommended for normal use.
-              </p>
+              <p className="muted">Recommended for normal use.</p>
             </div>
 
             <input
