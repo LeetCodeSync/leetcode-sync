@@ -167,10 +167,18 @@ async function syncSubmission(submission: SubmissionPayload) {
     logger.info("background", "commit success", result);
     return { ok: true, data: result };
   } catch (error) {
-    logger.error("background", "commit failed", error);
+    const message =
+      error instanceof Error ? error.message : "Unknown sync failure";
+
+    if (message.includes("fast forward")) {
+      logger.warn("background", "commit failed due to branch race", { message });
+    } else {
+      logger.error("background", "commit failed", error);
+    }
+
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Unknown sync failure"
+      error: message
     };
   }
 }
