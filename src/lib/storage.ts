@@ -1,26 +1,8 @@
-type ExtensionSettings = {
-  githubClientId: string;
-  githubScope: "repo" | "public_repo";
-  repoOwner: string;
-  repoName: string;
-  repoBranch: string;
-  autoSyncAcceptedOnly: boolean;
-};
-
-type GitHubAuthSession = {
-  accessToken: string;
-  tokenType: string;
-  scope: string;
-  createdAt: number;
-};
-
-type PendingDeviceAuth = {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  expiresAt: number;
-  intervalSeconds: number;
-};
+import type {
+  ExtensionSettings,
+  GitHubAuthSession,
+  PendingDeviceAuth
+} from "@/types";
 
 const SETTINGS_KEY = "settings";
 const AUTH_KEY = "githubAuthSession";
@@ -40,7 +22,7 @@ export async function getSettings(): Promise<ExtensionSettings> {
 
   return {
     ...DEFAULT_SETTINGS,
-    ...(result[SETTINGS_KEY] || {})
+    ...((result[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined) ?? {})
   };
 }
 
@@ -50,10 +32,12 @@ export async function saveSettings(settings: ExtensionSettings): Promise<void> {
 
 export async function getAuthSession(): Promise<GitHubAuthSession | null> {
   const result = await chrome.storage.local.get(AUTH_KEY);
-  return result[AUTH_KEY] || null;
+  return (result[AUTH_KEY] as GitHubAuthSession | undefined) ?? null;
 }
 
-export async function saveAuthSession(session: GitHubAuthSession): Promise<void> {
+export async function saveAuthSession(
+  session: GitHubAuthSession
+): Promise<void> {
   await chrome.storage.local.set({ [AUTH_KEY]: session });
 }
 
@@ -63,7 +47,7 @@ export async function clearAuthSession(): Promise<void> {
 
 export async function getPendingDeviceAuth(): Promise<PendingDeviceAuth | null> {
   const result = await chrome.storage.local.get(PENDING_AUTH_KEY);
-  return result[PENDING_AUTH_KEY] || null;
+  return (result[PENDING_AUTH_KEY] as PendingDeviceAuth | undefined) ?? null;
 }
 
 export async function savePendingDeviceAuth(

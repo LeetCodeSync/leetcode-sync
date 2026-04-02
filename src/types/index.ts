@@ -9,6 +9,13 @@ export interface ExtensionSettings {
   autoSyncAcceptedOnly: boolean;
 }
 
+export interface GitHubAuthSession {
+  accessToken: string;
+  tokenType: string;
+  scope: string;
+  createdAt: number;
+}
+
 export interface SyncRecord {
   id: string;
   title: string;
