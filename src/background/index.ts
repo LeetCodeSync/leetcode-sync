@@ -7,8 +7,9 @@ import {
   saveAuthSession,
   savePendingDeviceAuth,
   saveSettings
-} from "@/lib/storage";
-import { pollForAccessToken, startDeviceFlow } from "@/lib/github";
+} from "../lib/storage";
+import { commitSubmission, pollForAccessToken, startDeviceFlow } from "../lib/github";
+import type { SubmissionPayload } from "../types";
 
 let isPolling = false;
 
@@ -71,6 +72,38 @@ async function pollUntilAuthorized() {
   }
 }
 
+async function syncSubmission(submission: SubmissionPayload) {
+  const settings = await getSettings();
+  const session = await getAuthSession();
+
+  if (!session?.accessToken) {
+    return { ok: false, error: "GitHub is not connected" };
+  }
+
+  if (!settings.repoOwner || !settings.repoName || !settings.repoBranch) {
+    return { ok: false, error: "Repository settings are incomplete" };
+  }
+
+  if (settings.autoSyncAcceptedOnly && !submission.accepted) {
+    return { ok: true };
+  }
+
+  try {
+    const result = await commitSubmission({
+      token: session.accessToken,
+      settings,
+      submission
+    });
+
+    return { ok: true, data: result };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown sync failure"
+    };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
@@ -108,6 +141,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await clearAuthSession();
         await clearPendingDeviceAuth();
         sendResponse({ ok: true });
+        return;
+      }
+
+      if (message.type === "SYNC_SUBMISSION") {
+        sendResponse(await syncSubmission(message.payload));
         return;
       }
 
