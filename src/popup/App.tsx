@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { PendingDeviceAuth, RuntimeResponse } from "@/types";
+import type { PendingDeviceAuth, RuntimeResponse } from "../types";
 
-interface AuthState {
+type AuthState = {
   connected: boolean;
   pending: PendingDeviceAuth | null;
-}
+};
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
@@ -12,12 +12,16 @@ export default function App() {
     pending: null
   });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState("");
 
-  async function refreshState(): Promise<void> {
+  async function refreshState() {
+    console.log("[popup] refreshState called");
+
     const response = (await chrome.runtime.sendMessage({
       type: "GET_AUTH_STATE"
     })) as RuntimeResponse<AuthState>;
+
+    console.log("[popup] refreshState response", response);
 
     if (response.ok && response.data) {
       setAuthState(response.data);
@@ -26,14 +30,9 @@ export default function App() {
 
   useEffect(() => {
     void refreshState();
-    const interval = window.setInterval(() => {
-      void refreshState();
-    }, 2000);
-
-    return () => window.clearInterval(interval);
   }, []);
 
-  async function connectGitHub(): Promise<void> {
+  async function connectGitHub() {
     setLoading(true);
     setMessage("");
 
@@ -46,30 +45,23 @@ export default function App() {
         ...current,
         pending: response.data ?? null
       }));
-      setMessage("Authorize on GitHub, then this popup will refresh automatically.");
+      setMessage("Authorize on GitHub using the code below.");
     } else {
-      setMessage(response.error ?? "Failed to start GitHub device flow.");
+      setMessage(response.error ?? "Failed to start GitHub auth.");
     }
 
     setLoading(false);
   }
 
-  async function disconnectGitHub(): Promise<void> {
+  async function disconnectGitHub() {
     setLoading(true);
     await chrome.runtime.sendMessage({ type: "DISCONNECT_GITHUB" });
     await refreshState();
     setLoading(false);
   }
 
-  async function openOptions(): Promise<void> {
+  async function openOptions() {
     await chrome.runtime.openOptionsPage();
-  }
-
-  async function openSidePanel(): Promise<void> {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.windowId) {
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    }
   }
 
   return (
@@ -118,10 +110,6 @@ export default function App() {
           <button className="secondary" onClick={() => void openOptions()}>
             Settings
           </button>
-
-          <button className="secondary" onClick={() => void openSidePanel()}>
-            Dashboard
-          </button>
         </div>
 
         {message ? (
@@ -129,16 +117,6 @@ export default function App() {
             {message}
           </p>
         ) : null}
-      </div>
-
-      <div className="card">
-        <h2>Behavior</h2>
-        <p className="muted">
-          On an accepted LeetCode submission, the extension creates or updates:
-        </p>
-        <div className="code" style={{ marginTop: 8 }}>
-          /1-two-sum/{"\n"}README.md{"\n"}two-sum.py
-        </div>
       </div>
     </div>
   );

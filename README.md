@@ -68,6 +68,21 @@ Example generated files:
 - Full problem statement extraction is heuristic
 - Service worker lifecycle is non-persistent and must tolerate wake/sleep behavior
 
+## Authentication model
+
+The extension uses GitHub OAuth device flow instead of a GitHub App server-based integration.
+
+Why:
+- the extension is fully client-side
+- there is no backend to store app private keys or perform secure token exchange
+- device flow works without embedding a client secret in the extension
+
+Tradeoff:
+- this is weaker than a backend-assisted GitHub App architecture
+- access tokens are still stored locally in the extension
+
+This choice is intentional and is currently the best practical authentication model for a no-backend Chrome extension.
+
 ---
 
 ## Status
