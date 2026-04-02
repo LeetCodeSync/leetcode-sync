@@ -6,8 +6,36 @@ import {
   splitDescriptionSections,
   titleWithoutNumber
 } from "../lib/leetcode";
-import { logger } from "../lib/logger";
 import type { SubmissionPayload } from "../types";
+
+const DEBUG = true;
+const INFO = true;
+
+function logDebug(message: string, data?: unknown) {
+  if (!DEBUG) return;
+  if (data === undefined) {
+    console.log(`[content][DEBUG] ${message}`);
+  } else {
+    console.log(`[content][DEBUG] ${message}`, data);
+  }
+}
+
+function logInfo(message: string, data?: unknown) {
+  if (!INFO) return;
+  if (data === undefined) {
+    console.info(`[content][INFO] ${message}`);
+  } else {
+    console.info(`[content][INFO] ${message}`, data);
+  }
+}
+
+function logWarn(message: string, data?: unknown) {
+  if (data === undefined) {
+    console.warn(`[content][WARN] ${message}`);
+  } else {
+    console.warn(`[content][WARN] ${message}`, data);
+  }
+}
 
 let lastSentFingerprint = "";
 
@@ -90,7 +118,7 @@ function buildPayload(): SubmissionPayload | null {
   const code = getCodeText();
 
   if (!code.trim()) {
-    logger.debug("content", "buildPayload skipped because code is empty");
+    logDebug("buildPayload skipped because code is empty");
     return null;
   }
 
@@ -124,17 +152,16 @@ function buildFingerprint(payload: SubmissionPayload): string {
 }
 
 async function trySyncAcceptedSubmission(): Promise<void> {
-  logger.debug("content", "trySyncAcceptedSubmission called");
+  logDebug("trySyncAcceptedSubmission called");
 
-  const accepted = isAcceptedVisible();
-  if (!accepted) {
-    logger.debug("content", "accepted result not visible yet");
+  if (!isAcceptedVisible()) {
+    logDebug("accepted result not visible yet");
     return;
   }
 
   const payload = buildPayload();
   if (!payload) {
-    logger.debug("content", "payload is null", {
+    logDebug("payload is null", {
       descriptionLength: getDescriptionText().length,
       codeLength: getCodeText().length
     });
@@ -143,7 +170,7 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 
   const fingerprint = buildFingerprint(payload);
   if (fingerprint === lastSentFingerprint) {
-    logger.debug("content", "duplicate fingerprint, skipping");
+    logDebug("duplicate fingerprint, skipping");
     return;
   }
 
@@ -155,24 +182,24 @@ async function trySyncAcceptedSubmission(): Promise<void> {
       payload
     });
 
-    logger.info("content", "background responded", response);
+    logInfo("background responded", response);
 
     if (!response?.ok) {
-      logger.warn("content", "sync failed", response?.error);
+      logWarn("sync failed", response?.error);
     }
   } catch (error) {
-    logger.warn("content", "runtime unavailable", error);
+    logWarn("runtime unavailable", error);
   }
 }
 
 function init(): void {
-  logger.info("content", "content script loaded", {
+  logInfo("content script loaded", {
     href: window.location.href,
     path: window.location.pathname
   });
 
   if (!isSupportedPage()) {
-    logger.debug("content", "unsupported page");
+    logDebug("unsupported page");
     return;
   }
 
