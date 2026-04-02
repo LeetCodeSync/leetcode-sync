@@ -144,19 +144,30 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 
   lastSentFingerprint = fingerprint;
 
-  const response = await chrome.runtime.sendMessage({
-    type: "SYNC_SUBMISSION",
-    payload
-  });
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "SYNC_SUBMISSION",
+      payload
+    });
 
-  console.log("[sync] background response", response);
+    console.log("[sync] background response", response);
 
-  if (!response?.ok) {
-    console.warn("[leetcode-github-sync] sync failed:", response?.error);
+    if (!response?.ok) {
+      console.warn("[leetcode-github-sync] sync failed:", response?.error);
+    }
+  } catch (error) {
+    console.warn("[leetcode-github-sync] runtime unavailable", error);
   }
 }
 
+function isSupportedPage(): boolean {
+  return window.location.pathname.includes("/problems/") &&
+         !window.location.pathname.includes("/submissions/");
+}
+
 function init(): void {
+    if (!isSupportedPage()) return;
+
   const observer = new MutationObserver(() => {
     void trySyncAcceptedSubmission();
   });
