@@ -93,27 +93,20 @@ function buildProblemFolder(problemNumber: string, slug: string): string {
   return `${problemNumber}-${slug}`;
 }
 
+function formatSubmittedAt(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 function buildReadme(submission: SubmissionPayload): string {
-  const parts = [
-    submission.title,
-    `Difficulty: ${submission.difficulty}`,
+  return [
+    `# ${submission.title}`,
     "",
-    submission.descriptionText.trim()
-  ];
-
-  if (submission.examplesText?.trim()) {
-    parts.push("", submission.examplesText.trim());
-  }
-
-  if (submission.constraintsText?.trim()) {
-    parts.push("", submission.constraintsText.trim());
-  }
-
-  if (submission.followUpText?.trim()) {
-    parts.push("", submission.followUpText.trim());
-  }
-
-  return parts.join("\n");
+    `Difficulty: ${submission.difficulty}  `,
+    `Language: ${submission.language}  `,
+    `Submitted: ${formatSubmittedAt(submission.submittedAt)}  `,
+    `LeetCode: ${submission.problemUrl}`
+  ].join("\n");
 }
 
 async function githubRequest<T>(
