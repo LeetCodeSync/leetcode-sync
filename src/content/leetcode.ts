@@ -65,7 +65,33 @@ function getProblemTitle(): string {
     if (text) return text;
   }
 
-  return document.title.replace(" - LeetCode", "").trim() || "0. Unknown Problem";
+  return document.title.replace(" - LeetCode", "").trim() || "Unknown Problem";
+}
+
+function getProblemNumber(): string {
+  const rawTitle = getProblemTitle();
+
+  const fromTitle = problemNumberFromTitle(rawTitle);
+  if (fromTitle) return fromTitle;
+
+  const titleNode = queryFirst([
+    'div[data-cy="question-title"]',
+    "div.text-title-large a",
+    "h1"
+  ]);
+
+  const visibleTitle = titleNode?.textContent?.trim() ?? "";
+  const visibleMatch = visibleTitle.match(/^(\d+)\.\s*/);
+  if (visibleMatch) return visibleMatch[1];
+
+  const html = document.documentElement.innerHTML;
+  const jsonMatch =
+    html.match(/"questionFrontendId":"(\d+)"/) ||
+    html.match(/"frontendQuestionId":"(\d+)"/);
+
+  if (jsonMatch) return jsonMatch[1];
+
+  return "";
 }
 
 function getDifficultyText(): string {
@@ -116,8 +142,17 @@ function isAcceptedVisible(): boolean {
 
 function buildPayload(): SubmissionPayload | null {
   const rawTitle = getProblemTitle();
+  const problemNumber = getProblemNumber();
   const articleText = getDescriptionText() || "Problem statement not captured.";
   const code = getCodeText();
+
+  if (!problemNumber) {
+    logWarn("Could not parse LeetCode problem number", {
+      rawTitle,
+      href: window.location.href
+    });
+    return null;
+  }
 
   if (!code.trim()) {
     logDebug("buildPayload skipped because code is empty");
@@ -127,7 +162,7 @@ function buildPayload(): SubmissionPayload | null {
   const sections = splitDescriptionSections(articleText);
 
   return {
-    problemNumber: problemNumberFromTitle(rawTitle),
+    problemNumber,
     slug: slugFromUrl(window.location.href),
     title: titleWithoutNumber(rawTitle),
     difficulty: inferDifficulty(getDifficultyText()),
