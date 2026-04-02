@@ -6,17 +6,10 @@ import {
   splitDescriptionSections,
   titleWithoutNumber
 } from "../lib/leetcode";
+import { logger } from "../lib/logger";
 import type { SubmissionPayload } from "../types";
 
 let lastSentFingerprint = "";
-
-declare global {
-  interface Window {
-    __leetcodeSyncTest?: () => void;
-  }
-}
-
-console.log("[sync] content script loaded", window.location.href);
 
 function queryFirst(selectors: string[]): Element | null {
   for (const selector of selectors) {
@@ -97,7 +90,7 @@ function buildPayload(): SubmissionPayload | null {
   const code = getCodeText();
 
   if (!code.trim()) {
-    console.log("[sync] buildPayload: code is empty");
+    logger.debug("content", "buildPayload skipped because code is empty");
     return null;
   }
 
@@ -131,29 +124,26 @@ function buildFingerprint(payload: SubmissionPayload): string {
 }
 
 async function trySyncAcceptedSubmission(): Promise<void> {
-  console.log("[sync] trySyncAcceptedSubmission called");
+  logger.debug("content", "trySyncAcceptedSubmission called");
 
   const accepted = isAcceptedVisible();
-  console.log("[sync] accepted visible:", accepted);
-
   if (!accepted) {
+    logger.debug("content", "accepted result not visible yet");
     return;
   }
 
   const payload = buildPayload();
-  console.log("[sync] payload:", payload);
-
   if (!payload) {
-    console.log("[sync] description:", getDescriptionText());
-    console.log("[sync] code:", getCodeText());
+    logger.debug("content", "payload is null", {
+      descriptionLength: getDescriptionText().length,
+      codeLength: getCodeText().length
+    });
     return;
   }
 
   const fingerprint = buildFingerprint(payload);
-  console.log("[sync] fingerprint:", fingerprint);
-
   if (fingerprint === lastSentFingerprint) {
-    console.log("[sync] duplicate fingerprint, skipping");
+    logger.debug("content", "duplicate fingerprint, skipping");
     return;
   }
 
@@ -165,28 +155,28 @@ async function trySyncAcceptedSubmission(): Promise<void> {
       payload
     });
 
-    console.log("[sync] background response:", response);
+    logger.info("content", "background responded", response);
 
     if (!response?.ok) {
-      console.warn("[leetcode-github-sync] sync failed:", response?.error);
+      logger.warn("content", "sync failed", response?.error);
     }
   } catch (error) {
-    console.warn("[leetcode-github-sync] runtime unavailable", error);
+    logger.warn("content", "runtime unavailable", error);
   }
 }
 
 function init(): void {
-  console.log("[sync] init called", window.location.pathname);
+  logger.info("content", "content script loaded", {
+    href: window.location.href,
+    path: window.location.pathname
+  });
 
   if (!isSupportedPage()) {
-    console.log("[sync] unsupported page");
+    logger.debug("content", "unsupported page");
     return;
   }
 
-  console.log("[sync] supported page");
-
   const observer = new MutationObserver(() => {
-    console.log("[sync] mutation observed");
     void trySyncAcceptedSubmission();
   });
 
@@ -199,17 +189,11 @@ function init(): void {
   document.addEventListener(
     "click",
     () => {
-      console.log("[sync] click observed");
       window.setTimeout(() => void trySyncAcceptedSubmission(), 1500);
       window.setTimeout(() => void trySyncAcceptedSubmission(), 3000);
     },
     true
   );
-
-  window.__leetcodeSyncTest = () => {
-    console.log("[sync] manual trigger");
-    void trySyncAcceptedSubmission();
-  };
 }
 
 init();
