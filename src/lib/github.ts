@@ -2,6 +2,7 @@ import {
   GITHUB_ACCESS_TOKEN_URL,
   GITHUB_DEVICE_CODE_URL
 } from "./constants";
+import { logger } from "./logger";
 import type {
   ExtensionSettings,
   GitHubAuthSession,
@@ -133,7 +134,7 @@ async function githubRequest<T>(
   const data = await response.json();
 
   if (!response.ok) {
-    console.error("[github] request failed", {
+    logger.error("github", "request failed", {
       url,
       status: response.status,
       data
@@ -141,7 +142,10 @@ async function githubRequest<T>(
     throw new Error(data.message || `GitHub request failed: ${response.status}`);
   }
 
-  console.log("[github] request ok", { url, status: response.status });
+  logger.debug("github", "request ok", {
+    url,
+    status: response.status
+  });
 
   return data as T;
 }
@@ -152,6 +156,8 @@ async function getBranchHead(
   repo: string,
   branch: string
 ): Promise<{ commitSha: string; treeSha: string }> {
+  logger.debug("github", "getBranchHead", { owner, repo, branch });
+
   const ref = await githubRequest<{ object: { sha: string } }>(
     `${GITHUB_API_URL}/repos/${owner}/${repo}/git/ref/heads/${branch}`,
     token
