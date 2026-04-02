@@ -1,39 +1,57 @@
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from "@/lib/constants";
-import type {
-  ExtensionSettings,
-  PendingDeviceAuth,
-} from "@/types";
+const SETTINGS_KEY = "settings";
+const AUTH_KEY = "githubAuthSession";
+const PENDING_AUTH_KEY = "pendingGitHubDeviceAuth";
 
-export async function getSettings(): Promise<ExtensionSettings> {
-  const result = await chrome.storage.local.get(STORAGE_KEYS.settings);
+const DEFAULT_SETTINGS = {
+  githubClientId: "",
+  githubScope: "repo",
+  repoOwner: "",
+  repoName: "",
+  repoBranch: "main",
+  autoSyncAcceptedOnly: true
+};
+
+export async function getSettings() {
+  const result = await chrome.storage.local.get(SETTINGS_KEY);
+
   return {
     ...DEFAULT_SETTINGS,
-    ...(result[STORAGE_KEYS.settings] as Partial<ExtensionSettings> | undefined)
+    ...(result[SETTINGS_KEY] || {})
   };
 }
 
-export async function saveSettings(settings: ExtensionSettings): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEYS.settings]: settings });
+export async function saveSettings(settings: typeof DEFAULT_SETTINGS) {
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: settings
+  });
 }
 
-export async function getPendingDeviceAuth(): Promise<PendingDeviceAuth | null> {
-  const result = await chrome.storage.local.get(STORAGE_KEYS.pendingAuth);
-  return (result[STORAGE_KEYS.pendingAuth] as PendingDeviceAuth | undefined) ?? null;
+export async function getAuthSession() {
+  const result = await chrome.storage.local.get(AUTH_KEY);
+  return result[AUTH_KEY] || null;
 }
 
-export async function savePendingDeviceAuth(pending: PendingDeviceAuth): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEYS.pendingAuth]: pending });
+export async function saveAuthSession(session: any) {
+  await chrome.storage.local.set({
+    [AUTH_KEY]: session
+  });
 }
 
-export async function clearPendingDeviceAuth(): Promise<void> {
-  await chrome.storage.local.remove(STORAGE_KEYS.pendingAuth);
+export async function clearAuthSession() {
+  await chrome.storage.local.remove(AUTH_KEY);
 }
 
-clearAuthSession,
-  clearPendingDeviceAuth,
-  getAuthSession,
-  getPendingDeviceAuth,
-  getSettings,
-  saveAuthSession,
-  savePendingDeviceAuth,
-  saveSettings
+export async function getPendingDeviceAuth() {
+  const result = await chrome.storage.local.get(PENDING_AUTH_KEY);
+  return result[PENDING_AUTH_KEY] || null;
+}
+
+export async function savePendingDeviceAuth(pending: any) {
+  await chrome.storage.local.set({
+    [PENDING_AUTH_KEY]: pending
+  });
+}
+
+export async function clearPendingDeviceAuth() {
+  await chrome.storage.local.remove(PENDING_AUTH_KEY);
+}
