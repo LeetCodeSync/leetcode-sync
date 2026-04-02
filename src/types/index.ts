@@ -1,5 +1,21 @@
 export type Difficulty = "Easy" | "Medium" | "Hard" | "Unknown";
 
+export interface ExtensionSettings {
+  githubClientId: string;
+  githubScope: "public_repo" | "repo";
+  repoOwner: string;
+  repoName: string;
+  repoBranch: string;
+  autoSyncAcceptedOnly: boolean;
+}
+
+export interface GitHubAuthSession {
+  accessToken: string;
+  tokenType: string;
+  scope: string;
+  createdAt: number;
+}
+
 export interface SyncRecord {
   id: string;
   title: string;
@@ -22,6 +38,6 @@ export interface PendingDeviceAuth {
 
 export interface RuntimeResponse<T = unknown> {
     ok: boolean;
-    data?: any;
+    data?: T;
     error?: string;
 }
