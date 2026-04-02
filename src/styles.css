@@ -28,7 +28,7 @@ body {
 }
 
 .page {
-  padding: 16px;
+  padding: 14px;
   min-width: 360px;
   max-width: 420px;
 }
@@ -37,8 +37,17 @@ body {
   background: #131a2f;
   border: 1px solid #26314f;
   border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.compact-card {
+  padding: 12px;
+}
+
+.inner-card {
+  margin-top: 8px;
+  margin-bottom: 8px;
 }
 
 .row {
@@ -55,6 +64,14 @@ body {
   gap: 12px;
 }
 
+.action-row {
+  margin-top: 10px;
+}
+
+.top-gap {
+  margin-top: 10px;
+}
+
 h1,
 h2,
 h3,
@@ -69,7 +86,7 @@ h1 {
 
 h2 {
   font-size: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 h3 {
@@ -87,7 +104,7 @@ button {
   color: white;
   border: 0;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   cursor: pointer;
   font: inherit;
 }
@@ -114,19 +131,19 @@ textarea {
   color: #eef2ff;
   border: 1px solid #334266;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   font: inherit;
 }
 
 label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   font-size: 13px;
   color: #cdd7f3;
 }
 
 .form-group {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .kpi {
@@ -156,4 +173,22 @@ label {
 .badge.error {
   background: #4a1818;
   color: #ffb1b1;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+  color: #eef2ff;
+  font-size: 14px;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0;
 }

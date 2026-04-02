@@ -140,7 +140,7 @@ export default function App() {
         {authState.pending && !authState.connected ? (
           <div style={{ marginTop: 10 }}>
             <p className="muted">Open GitHub and enter this code:</p>
-            <div className="card" style={{ marginTop: 8, marginBottom: 8 }}>
+            <div className="card inner-card">
               <div className="kpi">{authState.pending.userCode}</div>
               <div className="muted" style={{ marginTop: 6 }}>
                 {authState.pending.verificationUri}
@@ -149,7 +149,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+        <div className="row action-row">
           {!authState.connected && !authState.pending ? (
             <button onClick={() => void connectGitHub()} disabled={loading}>
               Connect GitHub
@@ -188,15 +188,11 @@ export default function App() {
           </button>
         </div>
 
-        {message ? (
-          <p className="muted" style={{ marginTop: 10 }}>
-            {message}
-          </p>
-        ) : null}
+        {message ? <p className="muted top-gap">{message}</p> : null}
       </div>
 
       {showSettings ? (
-        <div className="card">
+        <div className="card compact-card">
           <h2>Settings</h2>
 
           <div className="form-group">
@@ -207,7 +203,6 @@ export default function App() {
               onChange={(event) =>
                 updateSetting("githubClientId", event.target.value)
               }
-              placeholder="GitHub OAuth App Client ID"
             />
           </div>
 
@@ -236,7 +231,6 @@ export default function App() {
               onChange={(event) =>
                 updateSetting("repositoryUrl", event.target.value)
               }
-              placeholder="https://github.com/your-name/your-repo"
             />
           </div>
 
@@ -246,27 +240,22 @@ export default function App() {
               id="repoBranch"
               value={settings.repoBranch}
               onChange={(event) => updateSetting("repoBranch", event.target.value)}
-              placeholder="main"
             />
           </div>
 
-          <div className="row-between" style={{ marginTop: 8 }}>
-            <div>
-              <h3>Sync accepted submissions only</h3>
-              <p className="muted">Recommended for normal use.</p>
-            </div>
-
+          <label className="checkbox-row" htmlFor="acceptedOnly">
+            <span>Sync accepted submissions only</span>
             <input
+              id="acceptedOnly"
               type="checkbox"
               checked={settings.autoSyncAcceptedOnly}
               onChange={(event) =>
                 updateSetting("autoSyncAcceptedOnly", event.target.checked)
               }
-              style={{ width: 18, height: 18 }}
             />
-          </div>
+          </label>
 
-          <div className="row" style={{ marginTop: 14 }}>
+          <div className="row top-gap">
             <button onClick={() => void saveSettings()} disabled={settingsSaving}>
               Save settings
             </button>
