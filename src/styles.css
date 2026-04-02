@@ -29,6 +29,8 @@ body {
 
 .page {
   padding: 16px;
+  min-width: 360px;
+  max-width: 420px;
 }
 
 .card {
@@ -43,6 +45,7 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .row-between {
