@@ -39,6 +39,7 @@ function logWarn(message: string, data?: unknown) {
 
 let lastSentFingerprint = "";
 let syncInFlight = false;
+let syncTimer: number | null = null;
 
 function queryFirst(selectors: string[]): Element | null {
   for (const selector of selectors) {
@@ -180,6 +181,7 @@ async function trySyncAcceptedSubmission(): Promise<void> {
     return;
   }
 
+  syncInFlight = true;
   lastSentFingerprint = fingerprint;
 
   try {
@@ -195,12 +197,12 @@ async function trySyncAcceptedSubmission(): Promise<void> {
     }
   } catch (error) {
     logWarn("runtime unavailable", error);
+  } finally {
+    syncInFlight = false;
   }
 }
 
-let syncTimer: number | null = null;
-
-function scheduleSync() {
+function scheduleSync(delay = 1200): void {
   if (syncTimer) {
     window.clearTimeout(syncTimer);
   }
@@ -208,7 +210,7 @@ function scheduleSync() {
   syncTimer = window.setTimeout(() => {
     void trySyncAcceptedSubmission();
     syncTimer = null;
-  }, 1200);
+  }, delay);
 }
 
 function init(): void {
@@ -226,11 +228,17 @@ function init(): void {
     scheduleSync();
   });
 
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+
   document.addEventListener(
     "click",
     () => {
-      window.setTimeout(() => void trySyncAcceptedSubmission(), 1500);
-      window.setTimeout(() => void trySyncAcceptedSubmission(), 3000);
+      window.setTimeout(() => scheduleSync(), 1500);
+      window.setTimeout(() => scheduleSync(), 3000);
     },
     true
   );
