@@ -198,6 +198,19 @@ async function trySyncAcceptedSubmission(): Promise<void> {
   }
 }
 
+let syncTimer: number | null = null;
+
+function scheduleSync() {
+  if (syncTimer) {
+    window.clearTimeout(syncTimer);
+  }
+
+  syncTimer = window.setTimeout(() => {
+    void trySyncAcceptedSubmission();
+    syncTimer = null;
+  }, 1200);
+}
+
 function init(): void {
   logInfo("content script loaded", {
     href: window.location.href,
@@ -210,13 +223,7 @@ function init(): void {
   }
 
   const observer = new MutationObserver(() => {
-    void trySyncAcceptedSubmission();
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    characterData: true
+    scheduleSync();
   });
 
   document.addEventListener(
