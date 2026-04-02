@@ -114,19 +114,22 @@ async function pollUntilAuthorized() {
 }
 
 async function syncSubmission(submission: SubmissionPayload) {
+  console.log("[bg] syncSubmission called", submission);
+
   const settings = await getSettings();
   const session = await getAuthSession();
 
+  console.log("[bg] settings", settings);
+  console.log("[bg] has token", !!session?.accessToken);
+
   if (!session?.accessToken) {
+    console.log("[bg] no token");
     return { ok: false, error: "GitHub is not connected" };
   }
 
   if (!settings.repoOwner || !settings.repoName || !settings.repoBranch) {
+    console.log("[bg] repo settings incomplete");
     return { ok: false, error: "Repository settings are incomplete" };
-  }
-
-  if (settings.autoSyncAcceptedOnly && !submission.accepted) {
-    return { ok: true };
   }
 
   try {
@@ -136,8 +139,10 @@ async function syncSubmission(submission: SubmissionPayload) {
       submission
     });
 
+    console.log("[bg] commit success", result);
     return { ok: true, data: result };
   } catch (error) {
+    console.error("[bg] commit failed", error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Unknown sync failure"

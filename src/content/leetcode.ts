@@ -118,13 +118,29 @@ function buildFingerprint(payload: SubmissionPayload): string {
 }
 
 async function trySyncAcceptedSubmission(): Promise<void> {
-  if (!isAcceptedVisible()) return;
+  console.log("[sync] trySyncAcceptedSubmission called");
+
+  if (!isAcceptedVisible()) {
+    console.log("[sync] accepted not visible");
+    return;
+  }
 
   const payload = buildPayload();
-  if (!payload) return;
+
+  if (!payload) {
+    console.log("[sync] payload is null");
+    console.log("[sync] description:", getDescriptionText());
+    console.log("[sync] code:", getCodeText());
+    return;
+  }
+
+  console.log("[sync] payload built", payload);
 
   const fingerprint = buildFingerprint(payload);
-  if (fingerprint === lastSentFingerprint) return;
+  if (fingerprint === lastSentFingerprint) {
+    console.log("[sync] duplicate fingerprint, skipping");
+    return;
+  }
 
   lastSentFingerprint = fingerprint;
 
@@ -132,6 +148,8 @@ async function trySyncAcceptedSubmission(): Promise<void> {
     type: "SYNC_SUBMISSION",
     payload
   });
+
+  console.log("[sync] background response", response);
 
   if (!response?.ok) {
     console.warn("[leetcode-github-sync] sync failed:", response?.error);

@@ -133,8 +133,18 @@ async function githubRequest<T>(
   const data = await response.json();
 
   if (!response.ok) {
+    console.error("[github] request failed", {
+      url,
+      status: response.status,
+      data
+    });
     throw new Error(data.message || `GitHub request failed: ${response.status}`);
   }
+
+  console.log("[github] request ok", {
+    url,
+    status: response.status
+  });
 
   return data as T;
 }
