@@ -3,7 +3,7 @@
   "name": "LeetCode GitHub Sync",
   "version": "0.1.0",
   "description": "Sync accepted LeetCode submissions into a GitHub repository.",
-  "permissions": ["storage", "sidePanel", "activeTab", "scripting"],
+  "permissions": ["storage"],
   "host_permissions": [
     "https://leetcode.com/*",
     "https://github.com/*",
@@ -15,12 +15,9 @@
   },
   "action": {
     "default_title": "LeetCode GitHub Sync",
-    "default_popup": "popup.html"
+    "default_popup": "src/popup/index.html"
   },
-  "options_page": "options.html",
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
+  "options_page": "src/options/index.html",
   "content_scripts": [
     {
       "matches": ["https://leetcode.com/problems/*"],
