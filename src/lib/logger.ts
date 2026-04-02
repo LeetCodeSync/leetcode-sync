@@ -18,13 +18,24 @@ function prefix(scope: string, level: LogLevelName): string {
   return `[${scope}] ${level}`;
 }
 
+function normalizeData(data: unknown): unknown {
+  if (data === undefined || data === null) return data;
+  if (typeof data !== "object") return data;
+
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch {
+    return data;
+  }
+}
+
 export const logger = {
   debug(scope: string, message: string, data?: unknown) {
     if (!shouldLog("DEBUG")) return;
     if (data === undefined) {
       console.log(`${prefix(scope, "DEBUG")} ${message}`);
     } else {
-      console.log(`${prefix(scope, "DEBUG")} ${message}`, data);
+      console.log(`${prefix(scope, "DEBUG")} ${message}`, normalizeData(data));
     }
   },
 
@@ -33,7 +44,7 @@ export const logger = {
     if (data === undefined) {
       console.info(`${prefix(scope, "INFO")} ${message}`);
     } else {
-      console.info(`${prefix(scope, "INFO")} ${message}`, data);
+      console.info(`${prefix(scope, "INFO")} ${message}`, normalizeData(data));
     }
   },
 
@@ -42,7 +53,7 @@ export const logger = {
     if (data === undefined) {
       console.warn(`${prefix(scope, "WARN")} ${message}`);
     } else {
-      console.warn(`${prefix(scope, "WARN")} ${message}`, data);
+      console.warn(`${prefix(scope, "WARN")} ${message}`, normalizeData(data));
     }
   },
 
@@ -51,7 +62,7 @@ export const logger = {
     if (data === undefined) {
       console.error(`${prefix(scope, "ERROR")} ${message}`);
     } else {
-      console.error(`${prefix(scope, "ERROR")} ${message}`, data);
+      console.error(`${prefix(scope, "ERROR")} ${message}`, normalizeData(data));
     }
   }
 };
