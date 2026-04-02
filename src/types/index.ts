@@ -1,5 +1,14 @@
 export type Difficulty = "Easy" | "Medium" | "Hard" | "Unknown";
 
+export interface ExtensionSettings {
+  githubClientId: string;
+  githubScope: "public_repo" | "repo";
+  repoOwner: string;
+  repoName: string;
+  repoBranch: string;
+  autoSyncAcceptedOnly: boolean;
+}
+
 export interface SyncRecord {
   id: string;
   title: string;
