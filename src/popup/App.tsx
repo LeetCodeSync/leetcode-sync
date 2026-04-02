@@ -31,12 +31,6 @@ export default function App() {
 
   useEffect(() => {
     void refreshState();
-
-    const interval = window.setInterval(() => {
-      void refreshState();
-    }, 2000);
-
-    return () => window.clearInterval(interval);
   }, []);
 
   async function connectGitHub() {

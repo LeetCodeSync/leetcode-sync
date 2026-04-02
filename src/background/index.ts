@@ -16,8 +16,6 @@ import {
 import { logger } from "../lib/logger";
 import type { SubmissionPayload } from "../types";
 
-let isPolling = false;
-
 async function checkPendingAuth() {
   logger.debug("background", "checkPendingAuth called");
 
@@ -81,49 +79,13 @@ async function beginDeviceAuth() {
   };
 
   await savePendingDeviceAuth(pending);
+
   logger.info("background", "device auth started", {
     verificationUri: pending.verificationUri,
     userCode: pending.userCode
   });
 
-  void pollUntilAuthorized();
-
   return { ok: true, data: pending };
-}
-
-async function pollUntilAuthorized() {
-  if (isPolling) return;
-  isPolling = true;
-
-  try {
-    const settings = await getSettings();
-    const pending = await getPendingDeviceAuth();
-
-    if (!settings.githubClientId || !pending) return;
-
-    while (Date.now() < pending.expiresAt) {
-      const session = await pollForAccessToken(
-        settings.githubClientId,
-        pending
-      );
-
-      if (session) {
-        await saveAuthSession(session);
-        await clearPendingDeviceAuth();
-        logger.info("background", "polling flow completed auth");
-        return;
-      }
-
-      await new Promise((resolve) =>
-        setTimeout(resolve, pending.intervalSeconds * 1000)
-      );
-    }
-
-    await clearPendingDeviceAuth();
-    logger.warn("background", "pending auth expired during polling");
-  } finally {
-    isPolling = false;
-  }
 }
 
 async function syncSubmission(submission: SubmissionPayload) {
