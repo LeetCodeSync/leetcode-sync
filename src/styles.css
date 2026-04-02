@@ -30,3 +30,127 @@ body {
 .page {
   padding: 16px;
 }
+
+.card {
+  background: #131a2f;
+  border: 1px solid #26314f;
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+h2 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+h3 {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+small,
+.muted {
+  color: #aeb9d4;
+}
+
+button {
+  background: #3559ff;
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.secondary {
+  background: #24304d;
+  color: #eef2ff;
+}
+
+button.danger {
+  background: #a83a3a;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  background: #0f162a;
+  color: #eef2ff;
+  border: 1px solid #334266;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #cdd7f3;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.kpi {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge.ok {
+  background: #12391f;
+  color: #9ce9b0;
+}
+
+.badge.warn {
+  background: #422f0f;
+  color: #ffd783;
+}
+
+.badge.error {
+  background: #4a1818;
+  color: #ffb1b1;
+}
