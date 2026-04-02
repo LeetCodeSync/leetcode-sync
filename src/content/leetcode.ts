@@ -38,6 +38,7 @@ function logWarn(message: string, data?: unknown) {
 }
 
 let lastSentFingerprint = "";
+let syncInFlight = false;
 
 function queryFirst(selectors: string[]): Element | null {
   for (const selector of selectors) {
@@ -153,6 +154,11 @@ function buildFingerprint(payload: SubmissionPayload): string {
 
 async function trySyncAcceptedSubmission(): Promise<void> {
   logDebug("trySyncAcceptedSubmission called");
+
+  if (syncInFlight) {
+    logDebug("sync already in flight, skipping");
+    return;
+  }
 
   if (!isAcceptedVisible()) {
     logDebug("accepted result not visible yet");
