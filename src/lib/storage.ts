@@ -29,3 +29,11 @@ export async function clearPendingDeviceAuth(): Promise<void> {
   await chrome.storage.local.remove(STORAGE_KEYS.pendingAuth);
 }
 
+clearAuthSession,
+  clearPendingDeviceAuth,
+  getAuthSession,
+  getPendingDeviceAuth,
+  getSettings,
+  saveAuthSession,
+  savePendingDeviceAuth,
+  saveSettings
