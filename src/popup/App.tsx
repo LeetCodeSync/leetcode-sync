@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { logger } from "../lib/logger";
 import type { PendingDeviceAuth, RuntimeResponse } from "../types";
 
 type AuthState = {
@@ -15,13 +16,13 @@ export default function App() {
   const [message, setMessage] = useState("");
 
   async function refreshState() {
-    console.log("[popup] refreshState called");
+    logger.debug("popup", "refreshState called");
 
     const response = (await chrome.runtime.sendMessage({
       type: "GET_AUTH_STATE"
     })) as RuntimeResponse<AuthState>;
 
-    console.log("[popup] refreshState response", response);
+    logger.debug("popup", "refreshState response", response);
 
     if (response.ok && response.data) {
       setAuthState(response.data);
@@ -30,6 +31,12 @@ export default function App() {
 
   useEffect(() => {
     void refreshState();
+
+    const interval = window.setInterval(() => {
+      void refreshState();
+    }, 2000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   async function connectGitHub() {
@@ -64,6 +71,11 @@ export default function App() {
     await chrome.runtime.openOptionsPage();
   }
 
+  async function openGitHubDevicePage() {
+    if (!authState.pending?.verificationUri) return;
+    await chrome.tabs.create({ url: authState.pending.verificationUri });
+  }
+
   return (
     <div className="page">
       <h1>LeetCode GitHub Sync</h1>
@@ -93,11 +105,27 @@ export default function App() {
         ) : null}
 
         <div className="row" style={{ marginTop: 10 }}>
-          {!authState.connected ? (
+          {!authState.connected && !authState.pending ? (
             <button onClick={() => void connectGitHub()} disabled={loading}>
               Connect GitHub
             </button>
-          ) : (
+          ) : null}
+
+          {authState.pending && !authState.connected ? (
+            <>
+              <button onClick={() => void openGitHubDevicePage()}>
+                Open GitHub
+              </button>
+              <button className="secondary" onClick={() => void refreshState()}>
+                Refresh status
+              </button>
+              <button className="secondary" onClick={() => void disconnectGitHub()}>
+                Cancel
+              </button>
+            </>
+          ) : null}
+
+          {authState.connected ? (
             <button
               className="danger"
               onClick={() => void disconnectGitHub()}
@@ -105,7 +133,7 @@ export default function App() {
             >
               Disconnect
             </button>
-          )}
+          ) : null}
 
           <button className="secondary" onClick={() => void openOptions()}>
             Settings
