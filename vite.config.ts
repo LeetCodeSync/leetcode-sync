@@ -4,14 +4,20 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  publicDir: "public",
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src")
+    }
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "src/popup/index.html"),
+        options: resolve(__dirname, "src/options/index.html"),
         background: resolve(__dirname, "src/background/index.ts"),
+        content: resolve(__dirname, "src/content/leetcode.ts")
       },
       output: {
         entryFileNames: "assets/[name].js",
