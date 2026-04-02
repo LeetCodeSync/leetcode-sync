@@ -1,6 +1,10 @@
 const GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code";
 const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
 
+type PendingDeviceAuth = {
+  deviceCode: string;
+};
+
 export async function startDeviceFlow(clientId: string, scope: string) {
   const response = await fetch(GITHUB_DEVICE_CODE_URL, {
     method: "POST",
@@ -17,15 +21,16 @@ export async function startDeviceFlow(clientId: string, scope: string) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error_description || data.error || "Failed to start device flow");
+    throw new Error(data.error_description || "Failed to start device flow");
   }
 
   return data;
 }
 
-export async function pollForAccessToken(clientId: string, pending: {
-  deviceCode: string;
-}) {
+export async function pollForAccessToken(
+  clientId: string,
+  pending: PendingDeviceAuth
+) {
   const response = await fetch(GITHUB_ACCESS_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -46,7 +51,7 @@ export async function pollForAccessToken(clientId: string, pending: {
       return null;
     }
 
-    throw new Error(data.error_description || data.error || "Failed to get access token");
+    throw new Error(data.error_description || "Failed to get access token");
   }
 
   return {
