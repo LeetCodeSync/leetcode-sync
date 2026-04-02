@@ -13,6 +13,36 @@ import type { SubmissionPayload } from "../types";
 
 let isPolling = false;
 
+async function checkPendingAuth() {
+  const settings = await getSettings();
+  const pending = await getPendingDeviceAuth();
+
+  if (!settings.githubClientId || !pending) {
+    return { ok: true, data: { connected: false, pending: null } };
+  }
+
+  if (Date.now() >= pending.expiresAt) {
+    await clearPendingDeviceAuth();
+    return { ok: true, data: { connected: false, pending: null } };
+  }
+
+  const session = await pollForAccessToken(settings.githubClientId, pending);
+
+  if (session) {
+    await saveAuthSession(session);
+    await clearPendingDeviceAuth();
+    return { ok: true, data: { connected: true, pending: null } };
+  }
+
+  return {
+    ok: true,
+    data: {
+      connected: false,
+      pending
+    }
+  };
+}
+
 async function beginDeviceAuth() {
   const settings = await getSettings();
 
@@ -122,13 +152,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const session = await getAuthSession();
         const pending = await getPendingDeviceAuth();
 
-        sendResponse({
-          ok: true,
-          data: {
-            connected: !!session?.accessToken,
-            pending
+        if (session?.accessToken) {
+            sendResponse({
+              ok: true,
+              data: {
+                connected: !!session?.accessToken,
+                pending
+              }
+            });
+            return;
           }
-        });
+        sendResponse(await checkPendingAuth());
         return;
       }
 
