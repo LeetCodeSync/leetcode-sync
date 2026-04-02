@@ -10,12 +10,24 @@ import type { SubmissionPayload } from "../types";
 
 let lastSentFingerprint = "";
 
+declare global {
+  interface Window {
+    __leetcodeSyncTest?: () => void;
+  }
+}
+
+console.log("[sync] content script loaded", window.location.href);
+
 function queryFirst(selectors: string[]): Element | null {
   for (const selector of selectors) {
     const found = document.querySelector(selector);
     if (found) return found;
   }
   return null;
+}
+
+function isSupportedPage(): boolean {
+  return window.location.pathname.includes("/problems/");
 }
 
 function getProblemTitle(): string {
@@ -81,10 +93,11 @@ function isAcceptedVisible(): boolean {
 
 function buildPayload(): SubmissionPayload | null {
   const rawTitle = getProblemTitle();
-  const articleText = getDescriptionText();
+  const articleText = getDescriptionText() || "Problem statement not captured.";
   const code = getCodeText();
 
-  if (!articleText || !code.trim()) {
+  if (!code.trim()) {
+    console.log("[sync] buildPayload: code is empty");
     return null;
   }
 
@@ -120,23 +133,25 @@ function buildFingerprint(payload: SubmissionPayload): string {
 async function trySyncAcceptedSubmission(): Promise<void> {
   console.log("[sync] trySyncAcceptedSubmission called");
 
-  if (!isAcceptedVisible()) {
-    console.log("[sync] accepted not visible");
+  const accepted = isAcceptedVisible();
+  console.log("[sync] accepted visible:", accepted);
+
+  if (!accepted) {
     return;
   }
 
   const payload = buildPayload();
+  console.log("[sync] payload:", payload);
 
   if (!payload) {
-    console.log("[sync] payload is null");
     console.log("[sync] description:", getDescriptionText());
     console.log("[sync] code:", getCodeText());
     return;
   }
 
-  console.log("[sync] payload built", payload);
-
   const fingerprint = buildFingerprint(payload);
+  console.log("[sync] fingerprint:", fingerprint);
+
   if (fingerprint === lastSentFingerprint) {
     console.log("[sync] duplicate fingerprint, skipping");
     return;
@@ -150,7 +165,7 @@ async function trySyncAcceptedSubmission(): Promise<void> {
       payload
     });
 
-    console.log("[sync] background response", response);
+    console.log("[sync] background response:", response);
 
     if (!response?.ok) {
       console.warn("[leetcode-github-sync] sync failed:", response?.error);
@@ -160,21 +175,18 @@ async function trySyncAcceptedSubmission(): Promise<void> {
   }
 }
 
-function isSupportedPage(): boolean {
-  const path = window.location.pathname;
-
-  return (
-    /^\/problems\/[^/]+\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
-  );
-}
-
 function init(): void {
-  if (!isSupportedPage()) return;
+  console.log("[sync] init called", window.location.pathname);
+
+  if (!isSupportedPage()) {
+    console.log("[sync] unsupported page");
+    return;
+  }
+
+  console.log("[sync] supported page");
 
   const observer = new MutationObserver(() => {
+    console.log("[sync] mutation observed");
     void trySyncAcceptedSubmission();
   });
 
@@ -187,11 +199,17 @@ function init(): void {
   document.addEventListener(
     "click",
     () => {
+      console.log("[sync] click observed");
       window.setTimeout(() => void trySyncAcceptedSubmission(), 1500);
       window.setTimeout(() => void trySyncAcceptedSubmission(), 3000);
     },
     true
   );
+
+  window.__leetcodeSyncTest = () => {
+    console.log("[sync] manual trigger");
+    void trySyncAcceptedSubmission();
+  };
 }
 
 init();

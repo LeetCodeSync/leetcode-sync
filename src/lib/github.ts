@@ -141,10 +141,7 @@ async function githubRequest<T>(
     throw new Error(data.message || `GitHub request failed: ${response.status}`);
   }
 
-  console.log("[github] request ok", {
-    url,
-    status: response.status
-  });
+  console.log("[github] request ok", { url, status: response.status });
 
   return data as T;
 }

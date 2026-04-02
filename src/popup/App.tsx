@@ -15,9 +15,13 @@ export default function App() {
   const [message, setMessage] = useState("");
 
   async function refreshState() {
+    console.log("[popup] refreshState called");
+
     const response = (await chrome.runtime.sendMessage({
       type: "GET_AUTH_STATE"
     })) as RuntimeResponse<AuthState>;
+
+    console.log("[popup] refreshState response", response);
 
     if (response.ok && response.data) {
       setAuthState(response.data);
