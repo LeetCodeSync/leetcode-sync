@@ -20,6 +20,18 @@ import {
 import { logger } from "../lib/logger";
 import type { SubmissionPayload, SyncRecord } from "../types";
 
+const syncLocks = new Set<string>();
+
+function buildSubmissionKey(submission: SubmissionPayload): string {
+  return [
+    submission.problemNumber,
+    submission.slug,
+    submission.language,
+    submission.code.length,
+    submission.code.slice(0, 80)
+  ].join(":");
+}
+
 async function checkPendingAuth() {
   logger.debug("background", "checkPendingAuth called");
 
@@ -123,6 +135,17 @@ async function syncSubmission(submission: SubmissionPayload) {
     return { ok: true };
   }
 
+  const submissionKey = buildSubmissionKey(submission);
+
+  if (syncLocks.has(submissionKey)) {
+    logger.warn("background", "duplicate submission sync blocked", {
+      submissionKey
+    });
+    return { ok: false, error: "A sync for this submission is already in progress" };
+  }
+
+  syncLocks.add(submissionKey);
+
   try {
     const result = await commitSubmission({
       token: session.accessToken,
@@ -169,7 +192,9 @@ async function syncSubmission(submission: SubmissionPayload) {
     await appendSyncRecord(failedRecord);
 
     if (message.includes("fast forward")) {
-      logger.warn("background", "commit failed due to branch race", { message });
+      logger.warn("background", "commit failed after retry due to branch race", {
+        message
+      });
     } else {
       logger.error("background", "commit failed", error);
     }
@@ -178,6 +203,8 @@ async function syncSubmission(submission: SubmissionPayload) {
       ok: false,
       error: message
     };
+  } finally {
+    syncLocks.delete(submissionKey);
   }
 }
 

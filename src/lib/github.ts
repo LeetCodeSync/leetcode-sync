@@ -173,8 +173,6 @@ async function getBranchHead(
   repo: string,
   branch: string
 ): Promise<{ commitSha: string; treeSha: string }> {
-  logger.debug("github", "getBranchHead", { owner, repo, branch });
-
   const ref = await githubRequest<{ object: { sha: string } }>(
     `${GITHUB_API_URL}/repos/${owner}/${repo}/git/ref/heads/${branch}`,
     token
@@ -283,6 +281,60 @@ async function updateBranchRef(
   );
 }
 
+async function createCommitAttempt(params: {
+  token: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  submission: SubmissionPayload;
+}): Promise<{ commitSha: string; repoPath: string }> {
+  const { token, owner, repo, branch, submission } = params;
+
+  const folder = buildProblemFolder(submission.problemNumber, submission.slug);
+  const codeFile = `${submission.slug}.${languageToExtension(submission.language)}`;
+
+  const readmePath = `${folder}/README.md`;
+  const solutionPath = `${folder}/${codeFile}`;
+
+  const { commitSha: headCommitSha, treeSha } = await getBranchHead(
+    token,
+    owner,
+    repo,
+    branch
+  );
+
+  const readmeBlobSha = await createBlob(token, owner, repo, buildReadme(submission));
+  const solutionBlobSha = await createBlob(token, owner, repo, submission.code);
+
+  const newTreeSha = await createTree(token, owner, repo, treeSha, [
+    { path: readmePath, sha: readmeBlobSha },
+    { path: solutionPath, sha: solutionBlobSha }
+  ]);
+
+  const commitSha = await createCommit(
+    token,
+    owner,
+    repo,
+    `${folder}: accepted submission in ${submission.language}`,
+    newTreeSha,
+    headCommitSha
+  );
+
+  await updateBranchRef(token, owner, repo, branch, commitSha);
+
+  return {
+    commitSha,
+    repoPath: folder
+  };
+}
+
+function isFastForwardConflict(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /fast forward/i.test(error.message)
+  );
+}
+
 export async function commitSubmission(params: {
   token: string;
   settings: ExtensionSettings;
@@ -297,63 +349,31 @@ export async function commitSubmission(params: {
 
   const { owner, repo } = parsed;
 
-  const folder = buildProblemFolder(submission.problemNumber, submission.slug);
-  const codeFile = `${submission.slug}.${languageToExtension(submission.language)}`;
+  try {
+    return await createCommitAttempt({
+      token,
+      owner,
+      repo,
+      branch: settings.repoBranch,
+      submission
+    });
+  } catch (error) {
+    if (!isFastForwardConflict(error)) {
+      throw error;
+    }
 
-  const readmePath = `${folder}/README.md`;
-  const solutionPath = `${folder}/${codeFile}`;
+    logger.warn("github", "fast-forward conflict detected, retrying once", {
+      repositoryUrl: settings.repositoryUrl,
+      branch: settings.repoBranch,
+      slug: submission.slug
+    });
 
-  const { commitSha: headCommitSha, treeSha } = await getBranchHead(
-    token,
-    owner,
-    repo,
-    settings.repoBranch
-  );
-
-  const readmeBlobSha = await createBlob(
-    token,
-    owner,
-    repo,
-    buildReadme(submission)
-  );
-
-  const solutionBlobSha = await createBlob(
-    token,
-    owner,
-    repo,
-    submission.code
-  );
-
-  const newTreeSha = await createTree(
-    token,
-    owner,
-    repo,
-    treeSha,
-    [
-      { path: readmePath, sha: readmeBlobSha },
-      { path: solutionPath, sha: solutionBlobSha }
-    ]
-  );
-
-  const commitSha = await createCommit(
-    token,
-    owner,
-    repo,
-    `${folder}: accepted submission in ${submission.language}`,
-    newTreeSha,
-    headCommitSha
-  );
-
-  await updateBranchRef(
-    token,
-    owner,
-    repo,
-    settings.repoBranch,
-    commitSha
-  );
-
-  return {
-    commitSha,
-    repoPath: folder
-  };
+    return await createCommitAttempt({
+      token,
+      owner,
+      repo,
+      branch: settings.repoBranch,
+      submission
+    });
+  }
 }
