@@ -6,7 +6,6 @@ import {
   splitDescriptionSections,
   titleWithoutNumber
 } from "../lib/leetcode";
-import { AppError } from "../lib/errors";
 import type { SubmissionPayload } from "../types";
 
 const DEBUG = true;
@@ -149,10 +148,7 @@ function buildPayload(): SubmissionPayload {
   const code = getCodeText();
 
   if (!problemNumber) {
-    throw new AppError(
-      "PROBLEM_NUMBER_PARSE_FAILED",
-      "Could not detect the LeetCode problem number on this page."
-    );
+    throw new Error("Could not detect the LeetCode problem number on this page.");
   }
 
   if (!code.trim()) {
