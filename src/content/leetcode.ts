@@ -14,25 +14,20 @@ const BRIDGE_SOURCE = "leetcode-github-sync";
 const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
 const ATTEMPT_COOLDOWN_MS = 15_000;
 
-type NetworkCapture = {
-  source: "fetch" | "xhr";
+type DetailCapture = {
+  source: "submission-detail-fetch";
   url: string;
   capturedAt: number;
-  submissionId?: string;
-  code?: string;
+  submissionId: string;
+  code: string;
   language?: string;
-  accepted?: boolean;
+  accepted: boolean;
   statusText?: string;
   runtime?: string;
   memory?: string;
 };
 
-type CodeCandidate = {
-  code: string;
-  source: "network" | "textarea" | "monaco" | "none";
-};
-
-let latestNetworkCapture: NetworkCapture | null = null;
+let latestDetailCapture: DetailCapture | null = null;
 let pageScriptInjected = false;
 let lastSuccessfulFingerprint = "";
 let lastAttemptedFingerprint = "";
@@ -98,65 +93,34 @@ function looksLikeRealSolution(code: string): boolean {
   );
 }
 
-function getPageKind():
-  | "problem"
-  | "description"
-  | "submissions"
-  | "submission-detail"
-  | "other" {
+function isSupportedPage(): boolean {
   const path = window.location.pathname;
 
-  if (/^\/problems\/[^/]+\/?$/.test(path)) return "problem";
-  if (/^\/problems\/[^/]+\/description\/?$/.test(path)) return "description";
-  if (/^\/problems\/[^/]+\/submissions\/?$/.test(path)) return "submissions";
-  if (/^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)) {
-    return "submission-detail";
-  }
-
-  return "other";
+  return (
+    /^\/problems\/[^/]+\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
+  );
 }
 
-function isSupportedPage(): boolean {
-  return getPageKind() !== "other";
-}
-
-function isSubmissionPage(): boolean {
-  const kind = getPageKind();
-  return kind === "submissions" || kind === "submission-detail";
-}
-
-function mergeCapture(
-  current: NetworkCapture | null,
-  incoming: NetworkCapture
-): NetworkCapture {
+function mergeDetailCapture(
+  current: DetailCapture | null,
+  incoming: DetailCapture
+): DetailCapture {
   if (!current) return incoming;
 
-  const merged: NetworkCapture = {
-    ...current,
-    ...incoming
-  };
-
-  if (
-    incoming.code &&
-    (!current.code || incoming.code.length > current.code.length)
-  ) {
-    merged.code = incoming.code;
+  if (incoming.submissionId !== current.submissionId) {
+    return incoming;
   }
 
-  if (incoming.submissionId) merged.submissionId = incoming.submissionId;
-  if (incoming.language) merged.language = incoming.language;
-  if (incoming.accepted !== undefined) merged.accepted = incoming.accepted;
-  if (incoming.statusText) merged.statusText = incoming.statusText;
-  if (incoming.runtime) merged.runtime = incoming.runtime;
-  if (incoming.memory) merged.memory = incoming.memory;
+  const next = { ...current, ...incoming };
 
-  if (incoming.capturedAt > current.capturedAt) {
-    merged.capturedAt = incoming.capturedAt;
-    merged.source = incoming.source;
-    merged.url = incoming.url;
+  if (incoming.code && incoming.code.length > current.code.length) {
+    next.code = incoming.code;
   }
 
-  return merged;
+  return next;
 }
 
 function handleBridgeMessage(event: MessageEvent) {
@@ -166,7 +130,7 @@ function handleBridgeMessage(event: MessageEvent) {
     | {
         source?: string;
         type?: string;
-        payload?: NetworkCapture;
+        payload?: DetailCapture;
       }
     | undefined;
 
@@ -174,13 +138,17 @@ function handleBridgeMessage(event: MessageEvent) {
     return;
   }
 
-  latestNetworkCapture = mergeCapture(latestNetworkCapture, {
+  if (!data.payload.submissionId || !data.payload.code) {
+    return;
+  }
+
+  latestDetailCapture = mergeDetailCapture(latestDetailCapture, {
     ...data.payload,
-    code: data.payload.code ? sanitizeCodeText(data.payload.code) : undefined
+    code: sanitizeCodeText(data.payload.code)
   });
 
-  logDebug("network capture updated", latestNetworkCapture);
-  scheduleSync(300);
+  logDebug("submission detail capture updated", latestDetailCapture);
+  scheduleSync(250);
 }
 
 function injectPageScript() {
@@ -257,74 +225,11 @@ function getDescriptionText(): string {
   return normalizeWhitespace(article?.textContent ?? "");
 }
 
-function getTextareaCode(): string {
-  const textareas = Array.from(
-    document.querySelectorAll("textarea")
-  ) as HTMLTextAreaElement[];
-
-  const candidates = textareas
-    .map((el) => sanitizeCodeText(el.value ?? ""))
-    .filter((text) => text.trim().length > 0)
-    .sort((a, b) => b.length - a.length);
-
-  return candidates[0] ?? "";
-}
-
-function getMonacoCodeFallback(): string {
-  const container = document.querySelector(".view-lines");
-  return sanitizeCodeText(container?.textContent ?? "");
-}
-
-function getCodeCandidate(): CodeCandidate {
-  if (
-    latestNetworkCapture?.code &&
-    looksLikeRealSolution(latestNetworkCapture.code)
-  ) {
-    return {
-      code: latestNetworkCapture.code,
-      source: "network"
-    };
-  }
-
-  const textareaCode = getTextareaCode();
-  if (looksLikeRealSolution(textareaCode)) {
-    return {
-      code: textareaCode,
-      source: "textarea"
-    };
-  }
-
-  if (!isSubmissionPage()) {
-    const monacoCode = getMonacoCodeFallback();
-    if (looksLikeRealSolution(monacoCode)) {
-      return {
-        code: monacoCode,
-        source: "monaco"
-      };
-    }
-  }
-
-  return {
-    code: "",
-    source: "none"
-  };
-}
-
-function getLanguageText(): string {
-  if (latestNetworkCapture?.language?.trim()) {
-    return latestNetworkCapture.language.trim();
-  }
-
-  const button = queryFirst([
-    'button[data-e2e-locator="lang-select"]',
-    'button[class*="lang-select"]'
-  ]);
-
-  return button?.textContent?.trim() || "Python3";
-}
-
 function isAcceptedVisible(): boolean {
-  if (latestNetworkCapture?.accepted === true) return true;
+  if (latestDetailCapture?.accepted === true) {
+    return true;
+  }
+
   return /\bAccepted\b/.test(document.body.innerText);
 }
 
@@ -332,7 +237,6 @@ function buildPayload(): SubmissionPayload | null {
   const rawTitle = getProblemTitle();
   const problemNumber = getProblemNumber();
   const articleText = getDescriptionText() || "Problem statement not captured.";
-  const codeCandidate = getCodeCandidate();
 
   if (!problemNumber) {
     logWarn("Could not detect the LeetCode problem number on this page.", {
@@ -342,20 +246,14 @@ function buildPayload(): SubmissionPayload | null {
     return null;
   }
 
-  if (isSubmissionPage() && codeCandidate.source !== "network") {
-    logWarn("Skipping submission page sync because full code was not captured from network.", {
-      href: window.location.href,
-      codeSource: codeCandidate.source,
-      networkCapture: latestNetworkCapture
-    });
+  if (!latestDetailCapture?.submissionId) {
+    logDebug("submission detail not captured yet");
     return null;
   }
 
-  if (!codeCandidate.code.trim()) {
-    logWarn("Code content is empty or unavailable on this page.", {
-      href: window.location.href,
-      codeSource: codeCandidate.source,
-      networkCapture: latestNetworkCapture
+  if (!looksLikeRealSolution(latestDetailCapture.code)) {
+    logWarn("Submission detail code is missing or incomplete.", {
+      submissionId: latestDetailCapture.submissionId
     });
     return null;
   }
@@ -367,8 +265,8 @@ function buildPayload(): SubmissionPayload | null {
     slug: slugFromUrl(window.location.href),
     title: titleWithoutNumber(rawTitle),
     difficulty: inferDifficulty(getDifficultyText()),
-    language: getLanguageText(),
-    code: codeCandidate.code,
+    language: latestDetailCapture.language?.trim() || "Python3",
+    code: latestDetailCapture.code,
     descriptionText: sections.descriptionText,
     examplesText: sections.examplesText,
     constraintsText: sections.constraintsText,
@@ -376,9 +274,9 @@ function buildPayload(): SubmissionPayload | null {
     problemUrl: window.location.href,
     submittedAt: new Date().toISOString(),
     accepted: true,
-    runtime: latestNetworkCapture?.runtime,
-    memory: latestNetworkCapture?.memory,
-    submissionId: latestNetworkCapture?.submissionId
+    runtime: latestDetailCapture.runtime,
+    memory: latestDetailCapture.memory,
+    submissionId: latestDetailCapture.submissionId
   };
 }
 
@@ -413,10 +311,6 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 
   const payload = buildPayload();
   if (!payload) {
-    logDebug("payload is null", {
-      descriptionLength: getDescriptionText().length,
-      codeLength: getCodeCandidate().code.length
-    });
     return;
   }
 

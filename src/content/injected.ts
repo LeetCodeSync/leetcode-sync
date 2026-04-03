@@ -1,8 +1,26 @@
 (() => {
   const FLAG = "__leetcodeGithubSyncInjected";
   const BRIDGE_SOURCE = "leetcode-github-sync";
-  const BRIDGE_TYPE_DRAFT = "LEETCODE_SUBMISSION_DRAFT";
-  const BRIDGE_TYPE_RESULT = "LEETCODE_SUBMISSION_RESULT";
+  const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
+
+  type DetailCapture = {
+    source: "submission-detail-fetch";
+    url: string;
+    capturedAt: number;
+    submissionId: string;
+    code: string;
+    language?: string;
+    accepted: boolean;
+    statusText?: string;
+    runtime?: string;
+    memory?: string;
+  };
+
+  type SubmissionHint = {
+    submissionId?: string;
+    accepted?: boolean;
+    statusText?: string;
+  };
 
   const globalWindow = window as Window & {
     [FLAG]?: boolean;
@@ -14,27 +32,7 @@
 
   globalWindow[FLAG] = true;
 
-  type SubmissionDraft = {
-    source: "fetch" | "xhr";
-    url: string;
-    capturedAt: number;
-    code?: string;
-    language?: string;
-    titleSlug?: string;
-  };
-
-  type SubmissionResult = {
-    source: "fetch" | "xhr";
-    url: string;
-    capturedAt: number;
-    submissionId?: string;
-    accepted?: boolean;
-    statusText?: string;
-    runtime?: string;
-    memory?: string;
-    code?: string;
-    language?: string;
-  };
+  const fetchedSubmissionIds = new Set<string>();
 
   function sanitizeText(value: string): string {
     return value
@@ -42,24 +40,6 @@
       .replace(/\u00A0/g, " ")
       .replace(/\r\n/g, "\n")
       .trim();
-  }
-
-  function looksLikeCode(value: string | undefined): boolean {
-    if (!value) return false;
-
-    const text = sanitizeText(value);
-    if (text.length < 20) return false;
-
-    return (
-      text.includes("class Solution") ||
-      text.includes("def ") ||
-      text.includes("function ") ||
-      text.includes("func ") ||
-      text.includes("public class ") ||
-      text.includes("public static ") ||
-      text.includes("private static ") ||
-      text.includes("return ")
-    );
   }
 
   function isObject(value: unknown): value is Record<string, unknown> {
@@ -129,7 +109,7 @@
     return undefined;
   }
 
-  function pickAccepted(
+  function pickAcceptedInfo(
     node: Record<string, unknown>
   ): { accepted?: boolean; statusText?: string } {
     const stringCandidates = [
@@ -137,13 +117,14 @@
       node.status_display,
       node.statusMessage,
       node.status_msg,
-      node.statusMsg
+      node.statusMsg,
+      node.state
     ];
 
     for (const value of stringCandidates) {
       if (typeof value === "string" && value.trim()) {
         const text = value.trim();
-        if (/accepted/i.test(text)) {
+        if (/accepted/i.test(text) || /success/i.test(text)) {
           return { accepted: true, statusText: text };
         }
         return { statusText: text };
@@ -160,260 +141,209 @@
     return {};
   }
 
-  function pickRuntime(node: Record<string, unknown>): string | undefined {
-    return pickString(node, [
-      "statusRuntime",
-      "status_runtime",
-      "runtime",
-      "displayRuntime"
-    ]);
-  }
+  function extractSubmissionHints(root: unknown): SubmissionHint[] {
+    const hints: SubmissionHint[] = [];
 
-  function pickMemory(node: Record<string, unknown>): string | undefined {
-    return pickString(node, [
-      "statusMemory",
-      "status_memory",
-      "memory",
-      "displayMemory"
-    ]);
-  }
-
-  function emitDraft(draft: SubmissionDraft): void {
-    window.postMessage(
-      {
-        source: BRIDGE_SOURCE,
-        type: BRIDGE_TYPE_DRAFT,
-        payload: draft
-      },
-      "*"
-    );
-  }
-
-  function emitResult(result: SubmissionResult): void {
-    window.postMessage(
-      {
-        source: BRIDGE_SOURCE,
-        type: BRIDGE_TYPE_RESULT,
-        payload: result
-      },
-      "*"
-    );
-  }
-
-  function extractDraftFromValue(
-    value: unknown,
-    url: string,
-    source: "fetch" | "xhr"
-  ): SubmissionDraft | null {
-    let best: SubmissionDraft | null = null;
-
-    walk(value, (node) => {
-      const code = pickString(node, [
-        "typedCode",
-        "typed_code",
-        "code",
-        "sourceCode",
-        "source_code",
-        "source"
-      ]);
-
-      if (!looksLikeCode(code)) {
-        return;
-      }
-
-      const language = pickString(node, [
-        "lang",
-        "langSlug",
-        "lang_slug",
-        "langName",
-        "language",
-        "codeLang"
-      ]);
-
-      const titleSlug = pickString(node, [
-        "titleSlug",
-        "title_slug",
-        "questionSlug"
-      ]);
-
-      const candidate: SubmissionDraft = {
-        source,
-        url,
-        capturedAt: Date.now(),
-        code,
-        language,
-        titleSlug
-      };
-
-      if (!best || (candidate.code?.length ?? 0) > (best.code?.length ?? 0)) {
-        best = candidate;
-      }
-    });
-
-    return best;
-  }
-
-  function extractResultsFromValue(
-    value: unknown,
-    url: string,
-    source: "fetch" | "xhr"
-  ): SubmissionResult[] {
-    const results: SubmissionResult[] = [];
-
-    walk(value, (node) => {
+    walk(root, (node) => {
       const submissionId = pickSubmissionId(node);
-      const acceptedInfo = pickAccepted(node);
-      const runtime = pickRuntime(node);
-      const memory = pickMemory(node);
-      const code = pickString(node, [
-        "code",
-        "submissionCode",
-        "typedCode",
-        "sourceCode",
-        "source"
-      ]);
-      const language = pickString(node, [
-        "lang",
-        "langSlug",
-        "lang_slug",
-        "langName",
-        "language",
-        "codeLang"
-      ]);
+      const acceptedInfo = pickAcceptedInfo(node);
 
-      const candidate: SubmissionResult = {
-        source,
-        url,
-        capturedAt: Date.now(),
-        submissionId,
-        accepted: acceptedInfo.accepted,
-        statusText: acceptedInfo.statusText,
-        runtime,
-        memory,
-        code: looksLikeCode(code) ? code : undefined,
-        language
-      };
-
-      const meaningful =
-        candidate.submissionId ||
-        candidate.accepted === true ||
-        candidate.runtime ||
-        candidate.memory ||
-        candidate.code;
-
-      if (meaningful) {
-        results.push(candidate);
-      }
-    });
-
-    return results;
-  }
-
-  function parseBodyText(body: unknown): string | null {
-    if (typeof body === "string") {
-      return body;
-    }
-
-    if (body instanceof URLSearchParams) {
-      return body.toString();
-    }
-
-    return null;
-  }
-
-  function handleOutgoingBody(
-    url: string,
-    bodyText: string,
-    source: "fetch" | "xhr"
-  ): void {
-    const parsedJson = parseJson(bodyText);
-    if (parsedJson) {
-      const draft = extractDraftFromValue(parsedJson, url, source);
-      if (draft) {
-        emitDraft(draft);
-        return;
-      }
-    }
-
-    try {
-      const params = new URLSearchParams(bodyText);
-      const code =
-        params.get("typed_code") ??
-        params.get("typedCode") ??
-        params.get("code") ??
-        params.get("source_code");
-
-      if (looksLikeCode(code ?? undefined)) {
-        emitDraft({
-          source,
-          url,
-          capturedAt: Date.now(),
-          code: sanitizeText(code ?? ""),
-          language:
-            params.get("lang") ??
-            params.get("lang_slug") ??
-            params.get("language") ??
-            undefined,
-          titleSlug:
-            params.get("title_slug") ??
-            params.get("titleSlug") ??
-            undefined
+      if (submissionId) {
+        hints.push({
+          submissionId,
+          accepted: acceptedInfo.accepted,
+          statusText: acceptedInfo.statusText
         });
       }
-    } catch {
-      // ignore
-    }
+    });
+
+    return hints;
   }
 
-  async function inspectFetchRequest(
-    input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<void> {
-    try {
-      let url = "";
-      let bodyText: string | null = null;
+  function emitCapture(payload: DetailCapture) {
+    window.postMessage(
+      {
+        source: BRIDGE_SOURCE,
+        type: BRIDGE_TYPE,
+        payload
+      },
+      "*"
+    );
+  }
 
-      if (typeof input === "string") {
-        url = input;
-        bodyText = parseBodyText(init?.body);
-      } else if (input instanceof URL) {
-        url = String(input);
-        bodyText = parseBodyText(init?.body);
-      } else if (input instanceof Request) {
-        url = input.url;
-        if (init?.body) {
-          bodyText = parseBodyText(init.body);
-        } else {
-          bodyText = await input.clone().text();
-        }
+  function detailHasCode(data: unknown): data is {
+    code?: string;
+    submissionCode?: string;
+    submissionDetails?: Record<string, unknown>;
+  } {
+    return isObject(data);
+  }
+
+  function normalizeDetailPayload(
+    submissionId: string,
+    url: string,
+    root: unknown
+  ): DetailCapture | null {
+    if (!detailHasCode(root)) return null;
+
+    let code: string | undefined;
+    let language: string | undefined;
+    let runtime: string | undefined;
+    let memory: string | undefined;
+    let accepted = false;
+    let statusText: string | undefined;
+
+    walk(root, (node) => {
+      if (!code) {
+        code = pickString(node, [
+          "code",
+          "submissionCode",
+          "typedCode",
+          "sourceCode",
+          "source"
+        ]);
       }
 
-      if (!url || !bodyText) return;
-      handleOutgoingBody(url, bodyText, "fetch");
-    } catch {
-      // ignore
+      if (!language) {
+        language = pickString(node, [
+          "lang",
+          "langName",
+          "language",
+          "codeLang"
+        ]);
+      }
+
+      if (!runtime) {
+        runtime = pickString(node, [
+          "runtimeDisplay",
+          "statusRuntime",
+          "status_runtime",
+          "runtime"
+        ]);
+      }
+
+      if (!memory) {
+        memory = pickString(node, [
+          "memoryDisplay",
+          "statusMemory",
+          "status_memory",
+          "memory"
+        ]);
+      }
+
+      const acceptedInfo = pickAcceptedInfo(node);
+      if (acceptedInfo.accepted) {
+        accepted = true;
+      }
+      if (!statusText && acceptedInfo.statusText) {
+        statusText = acceptedInfo.statusText;
+      }
+    });
+
+    if (!code || !code.trim()) {
+      return null;
     }
+
+    return {
+      source: "submission-detail-fetch",
+      url,
+      capturedAt: Date.now(),
+      submissionId,
+      code: sanitizeText(code),
+      language,
+      accepted,
+      statusText,
+      runtime,
+      memory
+    };
   }
 
-  async function handleResponseText(
-    url: string,
-    text: string,
-    source: "fetch" | "xhr"
+  async function fetchSubmissionDetail(
+    submissionId: string,
+    attempt = 0
   ): Promise<void> {
+    const maxAttempts = 8;
+    const url = `/submissions/detail/${submissionId}/check/`;
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Submission detail fetch failed: ${response.status}`);
+      }
+
+      const text = await response.text();
+      const json = parseJson(text);
+      const detail = normalizeDetailPayload(submissionId, url, json);
+
+      if (detail?.code?.trim()) {
+        emitCapture(detail);
+        return;
+      }
+    } catch {
+      // retry below
+    }
+
+    if (attempt >= maxAttempts - 1) {
+      return;
+    }
+
+    const delay = Math.min(500 * 2 ** attempt, 4000);
+    window.setTimeout(() => {
+      void fetchSubmissionDetail(submissionId, attempt + 1);
+    }, delay);
+  }
+
+  function queueSubmissionDetailFetch(submissionId: string) {
+    if (!submissionId || fetchedSubmissionIds.has(submissionId)) {
+      return;
+    }
+
+    fetchedSubmissionIds.add(submissionId);
+    void fetchSubmissionDetail(submissionId);
+  }
+
+  function isRelevantUrl(url: string): boolean {
+    return (
+      /graphql/i.test(url) ||
+      /submissions\/detail/i.test(url) ||
+      /submissions/i.test(url) ||
+      /submit/i.test(url) ||
+      /check/i.test(url)
+    );
+  }
+
+  async function handleResponseText(url: string, text: string): Promise<void> {
+    if (!isRelevantUrl(url)) return;
+
     const json = parseJson(text);
     if (!json) return;
 
-    const results = extractResultsFromValue(json, url, source);
-    for (const result of results) {
-      emitResult(result);
+    const hints = extractSubmissionHints(json);
+    for (const hint of hints) {
+      if (hint.submissionId) {
+        queueSubmissionDetailFetch(hint.submissionId);
+      }
+    }
+
+    const detailMatch = url.match(/\/submissions\/detail\/(\d+)\/check\/?$/);
+    if (detailMatch) {
+      const detail = normalizeDetailPayload(detailMatch[1], url, json);
+      if (detail?.code?.trim()) {
+        emitCapture(detail);
+      }
     }
   }
 
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = (async (...args: Parameters<typeof fetch>) => {
-    void inspectFetchRequest(args[0], args[1]);
-
     const response = await originalFetch(...args);
 
     try {
@@ -430,10 +360,10 @@
 
       if (contentType.includes("application/json")) {
         const text = await clone.text();
-        await handleResponseText(url, text, "fetch");
+        await handleResponseText(url, text);
       }
     } catch {
-      // ignore
+      // ignore bridge failures
     }
 
     return response;
@@ -465,16 +395,6 @@
     this: XMLHttpRequest & { __leetcodeGithubSyncUrl?: string },
     body?: Document | XMLHttpRequestBodyInit | null
   ) {
-    try {
-      const bodyText = parseBodyText(body);
-      const url = this.__leetcodeGithubSyncUrl ?? "";
-      if (url && bodyText) {
-        handleOutgoingBody(url, bodyText, "xhr");
-      }
-    } catch {
-      // ignore
-    }
-
     this.addEventListener("loadend", () => {
       try {
         const url = this.__leetcodeGithubSyncUrl ?? this.responseURL ?? "";
@@ -485,10 +405,10 @@
           typeof this.responseText === "string" &&
           contentType.includes("application/json")
         ) {
-          void handleResponseText(url, this.responseText, "xhr");
+          void handleResponseText(url, this.responseText);
         }
       } catch {
-        // ignore
+        // ignore bridge failures
       }
     });
 
