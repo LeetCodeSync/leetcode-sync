@@ -51,7 +51,13 @@ function queryFirst(selectors: string[]): Element | null {
 }
 
 function isSupportedPage(): boolean {
-  return window.location.pathname.includes("/problems/");
+  const path = window.location.pathname;
+  return (
+    /^\/problems\/[^/]+\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
+    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
+  );
 }
 
 function getProblemTitle(): string {
@@ -122,37 +128,82 @@ function getLanguageText(): string {
   return button?.textContent?.trim() || "Python3";
 }
 
+function sanitizeCodeText(value: string): string {
+  return value
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .trimEnd();
+}
+
+function getTextareaCode(): string {
+  const textareas = Array.from(
+    document.querySelectorAll("textarea")
+  ) as HTMLTextAreaElement[];
+
+  const candidates = textareas
+    .map((el) => sanitizeCodeText(el.value ?? ""))
+    .filter((text) => text.trim().length > 0)
+    .sort((a, b) => b.length - a.length);
+
+  return candidates[0] ?? "";
+}
+
+function getMonacoCodeFallback(): string {
+  const container = document.querySelector(".view-lines");
+  const text = sanitizeCodeText(container?.textContent ?? "");
+  return text.trim();
+}
+
+function looksLikeRealSolution(code: string): boolean {
+  if (!code.trim()) return false;
+
+  return (
+    code.includes("class Solution") ||
+    code.includes("def ") ||
+    code.includes("function ") ||
+    code.includes("public class ") ||
+    code.includes("public ") ||
+    code.includes("private ") ||
+    code.includes("return ")
+  );
+}
+
 function getCodeText(): string {
-  const textarea = document.querySelector("textarea") as HTMLTextAreaElement | null;
-  if (textarea?.value?.trim()) {
-    return textarea.value;
+  const textareaCode = getTextareaCode();
+  if (looksLikeRealSolution(textareaCode)) {
+    return textareaCode;
   }
 
-  const monacoLines = Array.from(document.querySelectorAll(".view-line"));
-  if (monacoLines.length > 0) {
-    const text = monacoLines.map((node) => node.textContent ?? "").join("\n").trim();
-    if (text) return text;
+  const monacoCode = getMonacoCodeFallback();
+  if (looksLikeRealSolution(monacoCode)) {
+    return monacoCode;
   }
 
-  return "";
+  return textareaCode || monacoCode || "";
 }
 
 function isAcceptedVisible(): boolean {
   return /\bAccepted\b/.test(document.body.innerText);
 }
 
-function buildPayload(): SubmissionPayload {
+function buildPayload(): SubmissionPayload | null {
   const rawTitle = getProblemTitle();
   const problemNumber = getProblemNumber();
   const articleText = getDescriptionText() || "Problem statement not captured.";
   const code = getCodeText();
 
   if (!problemNumber) {
-    throw new Error("Could not detect the LeetCode problem number on this page.");
+    logWarn("Could not detect the LeetCode problem number on this page.", {
+      href: window.location.href,
+      rawTitle
+    });
+    return null;
   }
 
   if (!code.trim()) {
-    throw new Error("Code editor content is empty.");
+    logWarn("Code editor content is empty or unavailable on this page.");
+    return null;
   }
 
   const sections = splitDescriptionSections(articleText);
@@ -189,6 +240,11 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 
   if (syncInFlight) {
     logDebug("sync already in flight, skipping");
+    return;
+  }
+
+  if (!isSupportedPage()) {
+    logDebug("unsupported page");
     return;
   }
 
@@ -260,7 +316,7 @@ function init(): void {
     path: window.location.pathname
   });
 
-  if (!isSupportedPage()) {
+  if (!window.location.pathname.includes("/problems/")) {
     logDebug("unsupported page");
     return;
   }
