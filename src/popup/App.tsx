@@ -113,6 +113,18 @@ export default function App() {
     setSettingsSaving(true);
     setSettingsMessage("");
 
+    if (!settings.repositoryUrl.trim()) {
+      setSettingsMessage("Repository URL is required.");
+      setSettingsSaving(false);
+      return;
+    }
+
+    if (!settings.repoBranch.trim()) {
+      setSettingsMessage("Branch is required.");
+      setSettingsSaving(false);
+      return;
+    }
+
     const response = (await chrome.runtime.sendMessage({
       type: "SAVE_SETTINGS",
       payload: settings
@@ -130,6 +142,12 @@ export default function App() {
   async function connectGitHub() {
     setLoading(true);
     setMessage("");
+
+    if (!settings.githubClientId.trim()) {
+      setMessage("Enter your GitHub OAuth App Client ID first.");
+      setLoading(false);
+      return;
+    }
 
     const response = (await chrome.runtime.sendMessage({
       type: "START_GITHUB_DEVICE_AUTH"
