@@ -163,6 +163,9 @@ async function syncSubmission(submission: SubmissionPayload) {
 
   if (syncLocks.has(submissionKey)) {
     logger.warn("background", "duplicate submission sync blocked", {
+      submissionKey
+    });
+
     return {
       ok: false,
       error: "A sync for this submission is already in progress."

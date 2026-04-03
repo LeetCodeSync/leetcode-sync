@@ -6,7 +6,7 @@ import {
   splitDescriptionSections,
   titleWithoutNumber
 } from "../lib/leetcode";
-import { AppError, toUserMessage } from "../lib/errors";
+import { AppError } from "../lib/errors";
 import type { SubmissionPayload } from "../types";
 
 const DEBUG = true;
