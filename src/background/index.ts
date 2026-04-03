@@ -17,6 +17,7 @@ import {
   pollForAccessToken,
   startDeviceFlow
 } from "../lib/github";
+import { AppError, toUserMessage } from "../lib/errors";
 import { logger } from "../lib/logger";
 import type { SubmissionPayload, SyncRecord } from "../types";
 
@@ -77,8 +78,8 @@ async function checkPendingAuth() {
 async function beginDeviceAuth() {
   const settings = await getSettings();
 
-  if (!settings.githubClientId) {
-    return { ok: false, error: "Missing GitHub Client ID" };
+  if (!settings.githubClientId.trim()) {
+    return { ok: false, error: "Enter your GitHub OAuth App Client ID first." };
   }
 
   const device = await startDeviceFlow(
@@ -121,13 +122,37 @@ async function syncSubmission(submission: SubmissionPayload) {
 
   if (!session?.accessToken) {
     logger.warn("background", "no GitHub token available");
-    return { ok: false, error: "GitHub is not connected" };
+    return {
+      ok: false,
+      error: toUserMessage(
+        new AppError(
+          "GITHUB_NOT_CONNECTED",
+          "Connect GitHub before syncing submissions."
+        )
+      )
+    };
   }
 
   const parsedRepo = parseGitHubRepoUrl(settings.repositoryUrl);
-  if (!parsedRepo || !settings.repoBranch) {
-    logger.warn("background", "repository settings are incomplete or invalid");
-    return { ok: false, error: "Repository URL or branch is invalid" };
+  if (!parsedRepo) {
+    logger.warn("background", "repository settings are incomplete");
+    return {
+      ok: false,
+      error: toUserMessage(
+        new AppError(
+          "INVALID_REPOSITORY_URL",
+          "Enter a valid GitHub repository URL."
+        )
+      )
+    };
+  }
+
+  if (!settings.repoBranch.trim()) {
+    logger.warn("background", "repository settings are invalid");
+    return {
+      ok: false,
+      error: "Enter a branch name."
+    };
   }
 
   if (settings.autoSyncAcceptedOnly && !submission.accepted) {
@@ -141,7 +166,11 @@ async function syncSubmission(submission: SubmissionPayload) {
     logger.warn("background", "duplicate submission sync blocked", {
       submissionKey
     });
-    return { ok: false, error: "A sync for this submission is already in progress" };
+
+    return {
+      ok: false,
+      error: "A sync for this submission is already in progress."
+    };
   }
 
   syncLocks.add(submissionKey);
@@ -168,12 +197,11 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
 
     await appendSyncRecord(record);
-
     logger.info("background", "commit success", result);
+
     return { ok: true, data: result };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown sync failure";
+    const message = toUserMessage(error);
 
     const failedRecord: SyncRecord = {
       id: `${submission.problemNumber}-${submission.slug}-${submission.language}-${Date.now()}`,
@@ -191,9 +219,10 @@ async function syncSubmission(submission: SubmissionPayload) {
 
     await appendSyncRecord(failedRecord);
 
-    if (message.includes("fast forward")) {
+    if (error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT") {
       logger.warn("background", "commit failed after retry due to branch race", {
-        message
+        message: error.message,
+        details: error.details
       });
     } else {
       logger.error("background", "commit failed", error);
@@ -276,7 +305,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       logger.error("background", "message handler failed", error);
       sendResponse({
         ok: false,
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: toUserMessage(error)
       });
     }
   })();
