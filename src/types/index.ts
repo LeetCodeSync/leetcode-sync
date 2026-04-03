@@ -37,6 +37,9 @@ export interface SubmissionPayload {
   problemUrl: string;
   submittedAt: string;
   accepted: boolean;
+  runtime?: string;
+  memory?: string;
+  submissionId?: string;
 }
 
 export interface SyncRecord {
@@ -52,6 +55,9 @@ export interface SyncRecord {
   commitSha?: string;
   status: "success" | "failed";
   error?: string;
+  runtime?: string;
+  memory?: string;
+  submissionId?: string;
 }
 
 export interface DashboardStats {
