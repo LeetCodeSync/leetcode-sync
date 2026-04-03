@@ -24,6 +24,7 @@ import type { SubmissionPayload, SyncRecord } from "../types";
 const syncLocks = new Set<string>();
 const recentAttemptTimestamps = new Map<string, number>();
 const ATTEMPT_COOLDOWN_MS = 15_000;
+const SUBMIT_TRIGGER_DELAY_MS = 2_500;
 
 function buildSubmissionKey(submission: SubmissionPayload): string {
   if (submission.submissionId?.trim()) {
@@ -45,6 +46,38 @@ function cleanupRecentAttempts(now: number) {
       recentAttemptTimestamps.delete(key);
     }
   }
+}
+
+type CompletedRequestDetails = {
+  tabId: number;
+  method?: string;
+  statusCode: number;
+  url: string;
+};
+
+function isLeetCodeSubmitRequest(details: CompletedRequestDetails): boolean {
+  return (
+    details.tabId >= 0 &&
+    details.method === "POST" &&
+    details.statusCode >= 200 &&
+    details.statusCode < 400 &&
+    /^https:\/\/leetcode\.com\/problems\/[^/]+\/submit\/?$/.test(details.url)
+  );
+}
+
+function triggerAcceptedSubmissionFetch(tabId: number) {
+  setTimeout(() => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
+      () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          logger.debug("background", "tab message ignored", err.message);
+        }
+      }
+    );
+  }, SUBMIT_TRIGGER_DELAY_MS);
 }
 
 async function checkPendingAuth() {
@@ -226,9 +259,11 @@ async function syncSubmission(submission: SubmissionPayload) {
       repoPath: result.repoPath,
       commitSha: result.commitSha,
       status: "success",
+      submissionId: submission.submissionId,
       runtime: submission.runtime,
       memory: submission.memory,
-      submissionId: submission.submissionId
+      runtimePercentile: submission.runtimePercentile,
+      memoryPercentile: submission.memoryPercentile
     };
 
     await appendSyncRecord(record);
@@ -250,9 +285,11 @@ async function syncSubmission(submission: SubmissionPayload) {
       repoPath: `${submission.problemNumber}-${submission.slug}`,
       status: "failed",
       error: message,
+      submissionId: submission.submissionId,
       runtime: submission.runtime,
       memory: submission.memory,
-      submissionId: submission.submissionId
+      runtimePercentile: submission.runtimePercentile,
+      memoryPercentile: submission.memoryPercentile
     };
 
     await appendSyncRecord(failedRecord);
@@ -351,3 +388,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return true;
 });
+
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (!isLeetCodeSubmitRequest(details)) {
+      return;
+    }
+
+    logger.info("background", "LeetCode submit request detected", {
+      url: details.url,
+      tabId: details.tabId
+    });
+
+    triggerAcceptedSubmissionFetch(details.tabId);
+  },
+  {
+    urls: ["https://leetcode.com/problems/*/submit/"]
+  }
+);

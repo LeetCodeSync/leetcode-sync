@@ -1,39 +1,47 @@
-import {
-  inferDifficulty,
-  normalizeWhitespace,
-  problemNumberFromTitle,
-  slugFromUrl,
-  splitDescriptionSections,
-  titleWithoutNumber
-} from "../lib/leetcode";
 import type { SubmissionPayload } from "../types";
 
 const DEBUG = true;
 const INFO = true;
 const BRIDGE_SOURCE = "leetcode-github-sync";
-const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
+const REQUEST_TYPE = "LEETCODE_API_REQUEST";
+const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 const ATTEMPT_COOLDOWN_MS = 15_000;
 
-type DetailCapture = {
-  source: "submission-detail-fetch";
-  url: string;
-  capturedAt: number;
-  submissionId: string;
-  code: string;
-  language?: string;
-  accepted: boolean;
-  statusText?: string;
-  runtime?: string;
-  memory?: string;
+type SubmissionBundle = {
+  question: {
+    questionFrontendId: string;
+    title: string;
+    titleSlug: string;
+    content: string;
+    difficulty: string;
+  };
+  submission: {
+    id: string;
+    code: string;
+    language?: string;
+    runtime?: string;
+    memory?: string;
+    runtimePercentile?: number;
+    memoryPercentile?: number;
+    timestamp?: string;
+    statusDisplay?: string;
+    accepted: boolean;
+  };
 };
 
-let latestDetailCapture: DetailCapture | null = null;
+type PendingBridgeRequest = {
+  resolve: (value: SubmissionBundle) => void;
+  reject: (reason?: unknown) => void;
+  timeoutId: number;
+};
+
 let pageScriptInjected = false;
 let lastSuccessfulFingerprint = "";
 let lastAttemptedFingerprint = "";
 let lastAttemptedAt = 0;
 let syncInFlight = false;
-let syncTimer: number | null = null;
+let requestCounter = 0;
+const pendingRequests = new Map<string, PendingBridgeRequest>();
 
 function logDebug(message: string, data?: unknown) {
   if (!DEBUG) return;
@@ -61,14 +69,6 @@ function logWarn(message: string, data?: unknown) {
   }
 }
 
-function queryFirst(selectors: string[]): Element | null {
-  for (const selector of selectors) {
-    const found = document.querySelector(selector);
-    if (found) return found;
-  }
-  return null;
-}
-
 function sanitizeCodeText(value: string): string {
   return value
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
@@ -77,78 +77,92 @@ function sanitizeCodeText(value: string): string {
     .trimEnd();
 }
 
-function looksLikeRealSolution(code: string): boolean {
-  const text = sanitizeCodeText(code).trim();
-  if (!text || text.length < 20) return false;
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
 
-  return (
-    text.includes("class Solution") ||
-    text.includes("def ") ||
-    text.includes("function ") ||
-    text.includes("func ") ||
-    text.includes("public class ") ||
-    text.includes("public static ") ||
-    text.includes("private static ") ||
-    text.includes("return ")
+function splitDescriptionSections(text: string): {
+  descriptionText: string;
+  examplesText?: string;
+  constraintsText?: string;
+  followUpText?: string;
+} {
+  const normalized = normalizeWhitespace(text);
+
+  const exampleIndex = normalized.search(/\bExample 1:\b/i);
+  const constraintsIndex = normalized.search(/\bConstraints:\b/i);
+  const followUpIndex = normalized.search(/\bFollow-up:\b/i);
+
+  const firstSectionStart = [exampleIndex, constraintsIndex, followUpIndex]
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+
+  const descriptionText =
+    firstSectionStart === undefined
+      ? normalized
+      : normalized.slice(0, firstSectionStart).trim();
+
+  const examplesText =
+    exampleIndex >= 0
+      ? normalized
+          .slice(
+            exampleIndex,
+            [constraintsIndex, followUpIndex]
+              .filter((index) => index > exampleIndex)
+              .sort((a, b) => a - b)[0] ?? normalized.length
+          )
+          .trim()
+      : undefined;
+
+  const constraintsText =
+    constraintsIndex >= 0
+      ? normalized
+          .slice(
+            constraintsIndex,
+            [followUpIndex].filter((index) => index > constraintsIndex)[0] ??
+              normalized.length
+          )
+          .trim()
+      : undefined;
+
+  const followUpText =
+    followUpIndex >= 0 ? normalized.slice(followUpIndex).trim() : undefined;
+
+  return {
+    descriptionText,
+    examplesText,
+    constraintsText,
+    followUpText
+  };
+}
+
+function inferDifficulty(value: string): "Easy" | "Medium" | "Hard" | "Unknown" {
+  if (/easy/i.test(value)) return "Easy";
+  if (/medium/i.test(value)) return "Medium";
+  if (/hard/i.test(value)) return "Hard";
+  return "Unknown";
+}
+
+function htmlToText(html: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  return normalizeWhitespace(doc.body.textContent ?? "");
+}
+
+function getSlugFromUrl(): string | null {
+  const match = window.location.pathname.match(/^\/problems\/([^/]+)/);
+  return match?.[1] ?? null;
+}
+
+function getSubmissionIdFromUrl(): string | null {
+  const match = window.location.pathname.match(
+    /^\/problems\/[^/]+\/submissions\/(\d+)\/?$/
   );
+  return match?.[1] ?? null;
 }
 
 function isSupportedPage(): boolean {
-  const path = window.location.pathname;
-
-  return (
-    /^\/problems\/[^/]+\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
-  );
-}
-
-function mergeDetailCapture(
-  current: DetailCapture | null,
-  incoming: DetailCapture
-): DetailCapture {
-  if (!current) return incoming;
-
-  if (incoming.submissionId !== current.submissionId) {
-    return incoming;
-  }
-
-  const next = { ...current, ...incoming };
-
-  if (incoming.code && incoming.code.length > current.code.length) {
-    next.code = incoming.code;
-  }
-
-  return next;
-}
-
-function handleBridgeMessage(event: MessageEvent) {
-  if (event.source !== window) return;
-
-  const data = event.data as
-    | {
-        source?: string;
-        type?: string;
-        payload?: DetailCapture;
-      }
-    | undefined;
-
-  if (!data || data.source !== BRIDGE_SOURCE || data.type !== BRIDGE_TYPE || !data.payload) {
-    return;
-  }
-
-  if (!data.payload.submissionId || !data.payload.code) {
-    return;
-  }
-
-  latestDetailCapture = mergeDetailCapture(latestDetailCapture, {
-    ...data.payload,
-    code: sanitizeCodeText(data.payload.code)
-  });
-
-  logDebug("submission detail capture updated", latestDetailCapture);
-  scheduleSync(250);
+  return window.location.pathname.includes("/problems/");
 }
 
 function injectPageScript() {
@@ -167,119 +181,6 @@ function injectPageScript() {
   (document.head || document.documentElement).appendChild(script);
 }
 
-function getProblemTitle(): string {
-  const selectors = [
-    'div[data-cy="question-title"]',
-    "div.text-title-large a",
-    "h1"
-  ];
-
-  for (const selector of selectors) {
-    const text = document.querySelector(selector)?.textContent?.trim();
-    if (text) return text;
-  }
-
-  return document.title.replace(" - LeetCode", "").trim() || "Unknown Problem";
-}
-
-function getProblemNumber(): string {
-  const rawTitle = getProblemTitle();
-  const fromTitle = problemNumberFromTitle(rawTitle);
-  if (fromTitle) return fromTitle;
-
-  const titleNode = queryFirst([
-    'div[data-cy="question-title"]',
-    "div.text-title-large a",
-    "h1"
-  ]);
-
-  const visibleTitle = titleNode?.textContent?.trim() ?? "";
-  const visibleMatch = visibleTitle.match(/^(\d+)\.\s*/);
-  if (visibleMatch) return visibleMatch[1];
-
-  const html = document.documentElement.innerHTML;
-  const jsonMatch =
-    html.match(/"questionFrontendId":"(\d+)"/) ||
-    html.match(/"frontendQuestionId":"(\d+)"/);
-
-  if (jsonMatch) return jsonMatch[1];
-
-  return "";
-}
-
-function getDifficultyText(): string {
-  const nodes = Array.from(document.querySelectorAll("div, span"));
-  const hit = nodes.find((node) =>
-    /^(Easy|Medium|Hard)$/.test(node.textContent?.trim() ?? "")
-  );
-  return hit?.textContent?.trim() ?? "Unknown";
-}
-
-function getDescriptionText(): string {
-  const article = queryFirst([
-    'div[data-track-load="description_content"]',
-    "article",
-    'div[class*="description"]'
-  ]);
-
-  return normalizeWhitespace(article?.textContent ?? "");
-}
-
-function isAcceptedVisible(): boolean {
-  if (latestDetailCapture?.accepted === true) {
-    return true;
-  }
-
-  return /\bAccepted\b/.test(document.body.innerText);
-}
-
-function buildPayload(): SubmissionPayload | null {
-  const rawTitle = getProblemTitle();
-  const problemNumber = getProblemNumber();
-  const articleText = getDescriptionText() || "Problem statement not captured.";
-
-  if (!problemNumber) {
-    logWarn("Could not detect the LeetCode problem number on this page.", {
-      href: window.location.href,
-      rawTitle
-    });
-    return null;
-  }
-
-  if (!latestDetailCapture?.submissionId) {
-    logDebug("submission detail not captured yet");
-    return null;
-  }
-
-  if (!looksLikeRealSolution(latestDetailCapture.code)) {
-    logWarn("Submission detail code is missing or incomplete.", {
-      submissionId: latestDetailCapture.submissionId
-    });
-    return null;
-  }
-
-  const sections = splitDescriptionSections(articleText);
-
-  return {
-    problemNumber,
-    slug: slugFromUrl(window.location.href),
-    title: titleWithoutNumber(rawTitle),
-    difficulty: inferDifficulty(getDifficultyText()),
-    language: latestDetailCapture.language?.trim() || "Python3",
-    code: latestDetailCapture.code,
-    descriptionText: sections.descriptionText,
-    examplesText: sections.examplesText,
-    constraintsText: sections.constraintsText,
-    followUpText: sections.followUpText,
-    problemUrl: window.location.href,
-    submittedAt: new Date().toISOString(),
-    accepted: true,
-    runtime: latestDetailCapture.runtime,
-    memory: latestDetailCapture.memory,
-    submissionId: latestDetailCapture.submissionId
-  };
-}
-
 function buildFingerprint(payload: SubmissionPayload): string {
   return [
     payload.submissionId ?? "",
@@ -291,29 +192,106 @@ function buildFingerprint(payload: SubmissionPayload): string {
   ].join(":");
 }
 
-async function trySyncAcceptedSubmission(): Promise<void> {
-  logDebug("trySyncAcceptedSubmission called");
+function bridgeRequest(
+  action: "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE",
+  payload: { slug: string }
+): Promise<SubmissionBundle>;
+function bridgeRequest(
+  action: "GET_SUBMISSION_BUNDLE_BY_ID",
+  payload: { slug: string; submissionId: string }
+): Promise<SubmissionBundle>;
+function bridgeRequest(
+  action:
+    | "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE"
+    | "GET_SUBMISSION_BUNDLE_BY_ID",
+  payload: Record<string, unknown>
+): Promise<SubmissionBundle> {
+  const requestId = `req-${Date.now()}-${++requestCounter}`;
 
-  if (syncInFlight) {
-    logDebug("sync already in flight, skipping");
-    return;
+  return new Promise<SubmissionBundle>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingRequests.delete(requestId);
+      reject(new Error("Timed out waiting for LeetCode API response"));
+    }, 20_000);
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeoutId
+    });
+
+    window.postMessage(
+      {
+        source: BRIDGE_SOURCE,
+        type: REQUEST_TYPE,
+        requestId,
+        action,
+        payload
+      },
+      "*"
+    );
+  });
+}
+
+function handleBridgeResponse(event: MessageEvent) {
+  if (event.source !== window) return;
+
+  const data = event.data as
+    | {
+        source?: string;
+        type?: string;
+        requestId?: string;
+        ok?: boolean;
+        payload?: SubmissionBundle;
+        error?: string;
+      }
+    | undefined;
+
+  if (!data) return;
+  if (data.source !== BRIDGE_SOURCE) return;
+  if (data.type !== RESPONSE_TYPE) return;
+  if (!data.requestId) return;
+
+  const pending = pendingRequests.get(data.requestId);
+  if (!pending) return;
+
+  pendingRequests.delete(data.requestId);
+  window.clearTimeout(pending.timeoutId);
+
+  if (data.ok && data.payload) {
+    pending.resolve(data.payload);
+  } else {
+    pending.reject(new Error(data.error ?? "LeetCode bridge request failed"));
   }
+}
 
-  if (!isSupportedPage()) {
-    logDebug("unsupported page");
-    return;
-  }
+function toPayload(bundle: SubmissionBundle): SubmissionPayload {
+  const description = splitDescriptionSections(htmlToText(bundle.question.content));
 
-  if (!isAcceptedVisible()) {
-    logDebug("accepted result not visible yet");
-    return;
-  }
+  return {
+    problemNumber: bundle.question.questionFrontendId,
+    slug: bundle.question.titleSlug,
+    title: bundle.question.title,
+    difficulty: inferDifficulty(bundle.question.difficulty),
+    language: bundle.submission.language?.trim() || "Python3",
+    code: sanitizeCodeText(bundle.submission.code),
+    descriptionText: description.descriptionText,
+    examplesText: description.examplesText,
+    constraintsText: description.constraintsText,
+    followUpText: description.followUpText,
+    problemUrl: `https://leetcode.com/problems/${bundle.question.titleSlug}/`,
+    submittedAt: new Date().toISOString(),
+    accepted: true,
+    submissionId: bundle.submission.id,
+    runtime: bundle.submission.runtime,
+    memory: bundle.submission.memory,
+    runtimePercentile: bundle.submission.runtimePercentile,
+    memoryPercentile: bundle.submission.memoryPercentile
+  };
+}
 
-  const payload = buildPayload();
-  if (!payload) {
-    return;
-  }
-
+async function syncBundle(bundle: SubmissionBundle) {
+  const payload = toPayload(bundle);
   const fingerprint = buildFingerprint(payload);
   const now = Date.now();
 
@@ -357,45 +335,63 @@ async function trySyncAcceptedSubmission(): Promise<void> {
   }
 }
 
-function scheduleSync(delay = 1200): void {
-  if (syncTimer) {
-    window.clearTimeout(syncTimer);
+async function fetchLatestAcceptedSubmission() {
+  if (syncInFlight) {
+    logDebug("sync already in flight, skipping");
+    return;
   }
 
-  syncTimer = window.setTimeout(() => {
-    void trySyncAcceptedSubmission();
-    syncTimer = null;
-  }, delay);
+  const slug = getSlugFromUrl();
+  if (!slug) {
+    logWarn("Could not determine problem slug from URL.");
+    return;
+  }
+
+  try {
+    const bundle = await bridgeRequest("GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE", {
+      slug
+    });
+    await syncBundle(bundle);
+  } catch (error) {
+    logWarn("Failed to fetch latest accepted submission bundle.", error);
+  }
 }
 
-function startObservers() {
-  const observer = new MutationObserver(() => {
-    scheduleSync();
-  });
+async function fetchCurrentSubmissionById() {
+  if (syncInFlight) {
+    logDebug("sync already in flight, skipping");
+    return;
+  }
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  });
+  const slug = getSlugFromUrl();
+  const submissionId = getSubmissionIdFromUrl();
 
-  document.addEventListener(
-    "click",
-    () => {
-      window.setTimeout(() => scheduleSync(), 1500);
-      window.setTimeout(() => scheduleSync(), 3000);
-      window.setTimeout(() => scheduleSync(), 5000);
-    },
-    true
-  );
+  if (!slug || !submissionId) {
+    return;
+  }
 
-  window.addEventListener("focus", () => {
-    scheduleSync(800);
-  });
-
-  window.addEventListener("message", handleBridgeMessage);
-  scheduleSync(1200);
+  try {
+    const bundle = await bridgeRequest("GET_SUBMISSION_BUNDLE_BY_ID", {
+      slug,
+      submissionId
+    });
+    await syncBundle(bundle);
+  } catch (error) {
+    logDebug("Current submission detail was not fetched.", error);
+  }
 }
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "FETCH_LATEST_ACCEPTED_SUBMISSION") {
+    void fetchLatestAcceptedSubmission().then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  sendResponse({ ok: false, error: "Unsupported content message" });
+  return false;
+});
 
 function init() {
   logInfo("content script loaded", {
@@ -403,20 +399,18 @@ function init() {
     path: window.location.pathname
   });
 
-  if (!window.location.pathname.includes("/problems/")) {
+  if (!isSupportedPage()) {
     logDebug("unsupported page");
     return;
   }
 
   injectPageScript();
+  window.addEventListener("message", handleBridgeResponse);
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      startObservers();
-    });
-  } else {
-    startObservers();
-  }
+  // Useful for re-opening a submission detail page directly.
+  window.setTimeout(() => {
+    void fetchCurrentSubmissionById();
+  }, 1200);
 }
 
 init();
