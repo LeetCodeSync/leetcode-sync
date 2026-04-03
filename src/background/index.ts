@@ -1,9 +1,12 @@
 import {
+  appendSyncRecord,
   clearAuthSession,
   clearPendingDeviceAuth,
   getAuthSession,
+  getDashboardStats,
   getPendingDeviceAuth,
   getSettings,
+  getSyncHistory,
   saveAuthSession,
   savePendingDeviceAuth,
   saveSettings
@@ -15,7 +18,7 @@ import {
   startDeviceFlow
 } from "../lib/github";
 import { logger } from "../lib/logger";
-import type { SubmissionPayload } from "../types";
+import type { SubmissionPayload, SyncRecord } from "../types";
 
 async function checkPendingAuth() {
   logger.debug("background", "checkPendingAuth called");
@@ -127,11 +130,43 @@ async function syncSubmission(submission: SubmissionPayload) {
       submission
     });
 
+    const record: SyncRecord = {
+      id: `${submission.problemNumber}-${submission.slug}-${submission.language}-${Date.now()}`,
+      problemNumber: submission.problemNumber,
+      slug: submission.slug,
+      title: submission.title,
+      difficulty: submission.difficulty,
+      language: submission.language,
+      submittedAt: submission.submittedAt,
+      syncedAt: new Date().toISOString(),
+      repoPath: result.repoPath,
+      commitSha: result.commitSha,
+      status: "success"
+    };
+
+    await appendSyncRecord(record);
+
     logger.info("background", "commit success", result);
     return { ok: true, data: result };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown sync failure";
+
+    const failedRecord: SyncRecord = {
+      id: `${submission.problemNumber}-${submission.slug}-${submission.language}-${Date.now()}`,
+      problemNumber: submission.problemNumber,
+      slug: submission.slug,
+      title: submission.title,
+      difficulty: submission.difficulty,
+      language: submission.language,
+      submittedAt: submission.submittedAt,
+      syncedAt: new Date().toISOString(),
+      repoPath: `${submission.problemNumber}-${submission.slug}`,
+      status: "failed",
+      error: message
+    };
+
+    await appendSyncRecord(failedRecord);
 
     if (message.includes("fast forward")) {
       logger.warn("background", "commit failed due to branch race", { message });
@@ -196,6 +231,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "SYNC_SUBMISSION") {
         sendResponse(await syncSubmission(message.payload));
+        return;
+      }
+
+      if (message.type === "GET_DASHBOARD_STATS") {
+        sendResponse({ ok: true, data: await getDashboardStats() });
+        return;
+      }
+
+      if (message.type === "GET_SYNC_HISTORY") {
+        sendResponse({ ok: true, data: await getSyncHistory() });
         return;
       }
 
