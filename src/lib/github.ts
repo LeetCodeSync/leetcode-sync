@@ -12,6 +12,30 @@ import type {
 
 const GITHUB_API_URL = "https://api.github.com";
 
+export function parseGitHubRepoUrl(repositoryUrl: string): {
+  owner: string;
+  repo: string;
+} | null {
+  const value = repositoryUrl.trim();
+
+  if (!value) return null;
+
+  const normalized = value.endsWith(".git") ? value.slice(0, -4) : value;
+
+  const match = normalized.match(
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    owner: match[1],
+    repo: match[2]
+  };
+}
+
 export async function startDeviceFlow(clientId: string, scope: string) {
   const response = await fetch(GITHUB_DEVICE_CODE_URL, {
     method: "POST",
@@ -266,6 +290,13 @@ export async function commitSubmission(params: {
 }): Promise<{ commitSha: string; repoPath: string }> {
   const { token, settings, submission } = params;
 
+  const parsed = parseGitHubRepoUrl(settings.repositoryUrl);
+  if (!parsed) {
+    throw new Error("Repository URL is invalid");
+  }
+
+  const { owner, repo } = parsed;
+
   const folder = buildProblemFolder(submission.problemNumber, submission.slug);
   const codeFile = `${submission.slug}.${languageToExtension(submission.language)}`;
 
@@ -274,29 +305,29 @@ export async function commitSubmission(params: {
 
   const { commitSha: headCommitSha, treeSha } = await getBranchHead(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     settings.repoBranch
   );
 
   const readmeBlobSha = await createBlob(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     buildReadme(submission)
   );
 
   const solutionBlobSha = await createBlob(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     submission.code
   );
 
   const newTreeSha = await createTree(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     treeSha,
     [
       { path: readmePath, sha: readmeBlobSha },
@@ -306,8 +337,8 @@ export async function commitSubmission(params: {
 
   const commitSha = await createCommit(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     `${folder}: accepted submission in ${submission.language}`,
     newTreeSha,
     headCommitSha
@@ -315,8 +346,8 @@ export async function commitSubmission(params: {
 
   await updateBranchRef(
     token,
-    settings.repoOwner,
-    settings.repoName,
+    owner,
+    repo,
     settings.repoBranch,
     commitSha
   );

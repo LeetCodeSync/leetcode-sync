@@ -2,7 +2,7 @@ import type {
   ExtensionSettings,
   GitHubAuthSession,
   PendingDeviceAuth
-} from "@/types";
+} from "../types";
 
 const SETTINGS_KEY = "settings";
 const AUTH_KEY = "githubAuthSession";
@@ -11,8 +11,7 @@ const PENDING_AUTH_KEY = "pendingGitHubDeviceAuth";
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",
   githubScope: "repo",
-  repoOwner: "",
-  repoName: "",
+  repositoryUrl: "",
   repoBranch: "main",
   autoSyncAcceptedOnly: true
 };

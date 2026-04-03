@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
 import { logger } from "../lib/logger";
-import type { PendingDeviceAuth, RuntimeResponse } from "../types";
+import type {
+  ExtensionSettings,
+  PendingDeviceAuth,
+  RuntimeResponse
+} from "../types";
 
 type AuthState = {
   connected: boolean;
   pending: PendingDeviceAuth | null;
+};
+
+const DEFAULT_SETTINGS: ExtensionSettings = {
+  githubClientId: "",
+  githubScope: "repo",
+  repositoryUrl: "",
+  repoBranch: "main",
+  autoSyncAcceptedOnly: true
 };
 
 export default function App() {
@@ -12,8 +24,12 @@ export default function App() {
     connected: false,
     pending: null
   });
+  const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   async function refreshState() {
     logger.debug("popup", "refreshState called");
@@ -29,9 +45,48 @@ export default function App() {
     }
   }
 
+  async function loadSettings() {
+    const response = (await chrome.runtime.sendMessage({
+      type: "GET_SETTINGS"
+    })) as RuntimeResponse<ExtensionSettings>;
+
+    if (response.ok && response.data) {
+      setSettings(response.data);
+    }
+  }
+
   useEffect(() => {
     void refreshState();
+    void loadSettings();
   }, []);
+
+  function updateSetting<K extends keyof ExtensionSettings>(
+    key: K,
+    value: ExtensionSettings[K]
+  ) {
+    setSettings((current) => ({
+      ...current,
+      [key]: value
+    }));
+  }
+
+  async function saveSettings() {
+    setSettingsSaving(true);
+    setSettingsMessage("");
+
+    const response = (await chrome.runtime.sendMessage({
+      type: "SAVE_SETTINGS",
+      payload: settings
+    })) as RuntimeResponse;
+
+    if (response.ok) {
+      setSettingsMessage("Settings saved.");
+    } else {
+      setSettingsMessage(response.error ?? "Failed to save settings.");
+    }
+
+    setSettingsSaving(false);
+  }
 
   async function connectGitHub() {
     setLoading(true);
@@ -61,10 +116,6 @@ export default function App() {
     setLoading(false);
   }
 
-  async function openOptions() {
-    await chrome.runtime.openOptionsPage();
-  }
-
   async function openGitHubDevicePage() {
     if (!authState.pending?.verificationUri) return;
     await chrome.tabs.create({ url: authState.pending.verificationUri });
@@ -89,7 +140,7 @@ export default function App() {
         {authState.pending && !authState.connected ? (
           <div style={{ marginTop: 10 }}>
             <p className="muted">Open GitHub and enter this code:</p>
-            <div className="card" style={{ marginTop: 8, marginBottom: 8 }}>
+            <div className="card inner-card">
               <div className="kpi">{authState.pending.userCode}</div>
               <div className="muted" style={{ marginTop: 6 }}>
                 {authState.pending.verificationUri}
@@ -98,7 +149,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="row" style={{ marginTop: 10 }}>
+        <div className="row action-row">
           {!authState.connected && !authState.pending ? (
             <button onClick={() => void connectGitHub()} disabled={loading}>
               Connect GitHub
@@ -129,17 +180,92 @@ export default function App() {
             </button>
           ) : null}
 
-          <button className="secondary" onClick={() => void openOptions()}>
-            Settings
+          <button
+            className="secondary"
+            onClick={() => setShowSettings((current) => !current)}
+          >
+            {showSettings ? "Hide settings" : "Settings"}
           </button>
         </div>
 
-        {message ? (
-          <p className="muted" style={{ marginTop: 10 }}>
-            {message}
-          </p>
-        ) : null}
+        {message ? <p className="muted top-gap">{message}</p> : null}
       </div>
+
+      {showSettings ? (
+        <div className="card compact-card">
+          <h2>Settings</h2>
+
+          <div className="form-group">
+            <label htmlFor="clientId">GitHub OAuth App Client ID</label>
+            <input
+              id="clientId"
+              value={settings.githubClientId}
+              onChange={(event) =>
+                updateSetting("githubClientId", event.target.value)
+              }
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="scope">Repository access</label>
+            <select
+              id="scope"
+              value={settings.githubScope}
+              onChange={(event) =>
+                updateSetting(
+                  "githubScope",
+                  event.target.value as ExtensionSettings["githubScope"]
+                )
+              }
+            >
+              <option value="repo">Public and private repositories</option>
+              <option value="public_repo">Public repositories only</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="repositoryUrl">Repository URL</label>
+            <input
+              id="repositoryUrl"
+              value={settings.repositoryUrl}
+              onChange={(event) =>
+                updateSetting("repositoryUrl", event.target.value)
+              }
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="repoBranch">Branch</label>
+            <input
+              id="repoBranch"
+              value={settings.repoBranch}
+              onChange={(event) => updateSetting("repoBranch", event.target.value)}
+            />
+          </div>
+
+          <label className="checkbox-row" htmlFor="acceptedOnly">
+            <span>Sync accepted submissions only</span>
+            <input
+              id="acceptedOnly"
+              type="checkbox"
+              checked={settings.autoSyncAcceptedOnly}
+              onChange={(event) =>
+                updateSetting("autoSyncAcceptedOnly", event.target.checked)
+              }
+            />
+          </label>
+
+          <div className="row top-gap">
+            <button onClick={() => void saveSettings()} disabled={settingsSaving}>
+              Save settings
+            </button>
+
+            {settingsMessage ? (
+              <span className="muted">{settingsMessage}</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "../lib/storage";
 import {
   commitSubmission,
+  parseGitHubRepoUrl,
   pollForAccessToken,
   startDeviceFlow
 } from "../lib/github";
@@ -99,8 +100,7 @@ async function syncSubmission(submission: SubmissionPayload) {
   const session = await getAuthSession();
 
   logger.debug("background", "repo config", {
-    owner: settings.repoOwner,
-    repo: settings.repoName,
+    repositoryUrl: settings.repositoryUrl,
     branch: settings.repoBranch
   });
 
@@ -109,9 +109,10 @@ async function syncSubmission(submission: SubmissionPayload) {
     return { ok: false, error: "GitHub is not connected" };
   }
 
-  if (!settings.repoOwner || !settings.repoName || !settings.repoBranch) {
-    logger.warn("background", "repository settings are incomplete");
-    return { ok: false, error: "Repository settings are incomplete" };
+  const parsedRepo = parseGitHubRepoUrl(settings.repositoryUrl);
+  if (!parsedRepo || !settings.repoBranch) {
+    logger.warn("background", "repository settings are incomplete or invalid");
+    return { ok: false, error: "Repository URL or branch is invalid" };
   }
 
   if (settings.autoSyncAcceptedOnly && !submission.accepted) {
