@@ -1,7 +1,8 @@
 (() => {
   const FLAG = "__leetcodeGithubSyncInjected";
   const BRIDGE_SOURCE = "leetcode-github-sync";
-  const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
+  const BRIDGE_TYPE_DRAFT = "LEETCODE_SUBMISSION_DRAFT";
+  const BRIDGE_TYPE_RESULT = "LEETCODE_SUBMISSION_RESULT";
 
   const globalWindow = window as Window & {
     [FLAG]?: boolean;
@@ -13,17 +14,26 @@
 
   globalWindow[FLAG] = true;
 
-  type NetworkCapture = {
+  type SubmissionDraft = {
+    source: "fetch" | "xhr";
+    url: string;
+    capturedAt: number;
+    code?: string;
+    language?: string;
+    titleSlug?: string;
+  };
+
+  type SubmissionResult = {
     source: "fetch" | "xhr";
     url: string;
     capturedAt: number;
     submissionId?: string;
-    code?: string;
-    language?: string;
     accepted?: boolean;
     statusText?: string;
     runtime?: string;
     memory?: string;
+    code?: string;
+    language?: string;
   };
 
   function sanitizeText(value: string): string {
@@ -150,65 +160,111 @@
     return {};
   }
 
-  function normalizeMetric(value: string | undefined): string | undefined {
-    if (!value) return undefined;
-    const text = sanitizeText(value);
-    return text || undefined;
-  }
-
   function pickRuntime(node: Record<string, unknown>): string | undefined {
-    return normalizeMetric(
-      pickString(node, [
-        "statusRuntime",
-        "status_runtime",
-        "runtime",
-        "displayRuntime"
-      ])
-    );
+    return pickString(node, [
+      "statusRuntime",
+      "status_runtime",
+      "runtime",
+      "displayRuntime"
+    ]);
   }
 
   function pickMemory(node: Record<string, unknown>): string | undefined {
-    return normalizeMetric(
-      pickString(node, [
-        "statusMemory",
-        "status_memory",
-        "memory",
-        "displayMemory"
-      ])
+    return pickString(node, [
+      "statusMemory",
+      "status_memory",
+      "memory",
+      "displayMemory"
+    ]);
+  }
+
+  function emitDraft(draft: SubmissionDraft): void {
+    window.postMessage(
+      {
+        source: BRIDGE_SOURCE,
+        type: BRIDGE_TYPE_DRAFT,
+        payload: draft
+      },
+      "*"
     );
   }
 
-  function isRelevantUrl(url: string): boolean {
-    return (
-      /graphql/i.test(url) ||
-      /submissions\/detail/i.test(url) ||
-      /submissions/i.test(url) ||
-      /submit/i.test(url) ||
-      /check/i.test(url)
+  function emitResult(result: SubmissionResult): void {
+    window.postMessage(
+      {
+        source: BRIDGE_SOURCE,
+        type: BRIDGE_TYPE_RESULT,
+        payload: result
+      },
+      "*"
     );
   }
 
-  function shouldEmitCapture(url: string, candidate: NetworkCapture): boolean {
-    const codeLooksReal = looksLikeCode(candidate.code);
-    const hasSubmissionId = Boolean(candidate.submissionId);
-    const accepted = candidate.accepted === true;
-    const submissionUrl = /submission/i.test(url);
-
-    if (accepted && (codeLooksReal || hasSubmissionId)) return true;
-    if (hasSubmissionId && (codeLooksReal || Boolean(candidate.language))) return true;
-    if (submissionUrl && codeLooksReal) return true;
-
-    return false;
-  }
-
-  function extractCaptures(
-    root: unknown,
+  function extractDraftFromValue(
+    value: unknown,
     url: string,
     source: "fetch" | "xhr"
-  ): NetworkCapture[] {
-    const captures: NetworkCapture[] = [];
+  ): SubmissionDraft | null {
+    let best: SubmissionDraft | null = null;
 
-    walk(root, (node) => {
+    walk(value, (node) => {
+      const code = pickString(node, [
+        "typedCode",
+        "typed_code",
+        "code",
+        "sourceCode",
+        "source_code",
+        "source"
+      ]);
+
+      if (!looksLikeCode(code)) {
+        return;
+      }
+
+      const language = pickString(node, [
+        "lang",
+        "langSlug",
+        "lang_slug",
+        "langName",
+        "language",
+        "codeLang"
+      ]);
+
+      const titleSlug = pickString(node, [
+        "titleSlug",
+        "title_slug",
+        "questionSlug"
+      ]);
+
+      const candidate: SubmissionDraft = {
+        source,
+        url,
+        capturedAt: Date.now(),
+        code,
+        language,
+        titleSlug
+      };
+
+      if (!best || (candidate.code?.length ?? 0) > (best.code?.length ?? 0)) {
+        best = candidate;
+      }
+    });
+
+    return best;
+  }
+
+  function extractResultsFromValue(
+    value: unknown,
+    url: string,
+    source: "fetch" | "xhr"
+  ): SubmissionResult[] {
+    const results: SubmissionResult[] = [];
+
+    walk(value, (node) => {
+      const submissionId = pickSubmissionId(node);
+      const acceptedInfo = pickAccepted(node);
+      const runtime = pickRuntime(node);
+      const memory = pickMemory(node);
       const code = pickString(node, [
         "code",
         "submissionCode",
@@ -216,49 +272,127 @@
         "sourceCode",
         "source"
       ]);
-
       const language = pickString(node, [
         "lang",
+        "langSlug",
+        "lang_slug",
         "langName",
         "language",
         "codeLang"
       ]);
 
-      const submissionId = pickSubmissionId(node);
-      const acceptedInfo = pickAccepted(node);
-      const runtime = pickRuntime(node);
-      const memory = pickMemory(node);
-
-      const candidate: NetworkCapture = {
+      const candidate: SubmissionResult = {
         source,
         url,
         capturedAt: Date.now(),
         submissionId,
-        code,
-        language,
         accepted: acceptedInfo.accepted,
         statusText: acceptedInfo.statusText,
         runtime,
-        memory
+        memory,
+        code: looksLikeCode(code) ? code : undefined,
+        language
       };
 
-      if (shouldEmitCapture(url, candidate)) {
-        captures.push(candidate);
+      const meaningful =
+        candidate.submissionId ||
+        candidate.accepted === true ||
+        candidate.runtime ||
+        candidate.memory ||
+        candidate.code;
+
+      if (meaningful) {
+        results.push(candidate);
       }
     });
 
-    return captures;
+    return results;
   }
 
-  function emitCapture(capture: NetworkCapture): void {
-    window.postMessage(
-      {
-        source: BRIDGE_SOURCE,
-        type: BRIDGE_TYPE,
-        payload: capture
-      },
-      "*"
-    );
+  function parseBodyText(body: unknown): string | null {
+    if (typeof body === "string") {
+      return body;
+    }
+
+    if (body instanceof URLSearchParams) {
+      return body.toString();
+    }
+
+    return null;
+  }
+
+  function handleOutgoingBody(
+    url: string,
+    bodyText: string,
+    source: "fetch" | "xhr"
+  ): void {
+    const parsedJson = parseJson(bodyText);
+    if (parsedJson) {
+      const draft = extractDraftFromValue(parsedJson, url, source);
+      if (draft) {
+        emitDraft(draft);
+        return;
+      }
+    }
+
+    try {
+      const params = new URLSearchParams(bodyText);
+      const code =
+        params.get("typed_code") ??
+        params.get("typedCode") ??
+        params.get("code") ??
+        params.get("source_code");
+
+      if (looksLikeCode(code ?? undefined)) {
+        emitDraft({
+          source,
+          url,
+          capturedAt: Date.now(),
+          code: sanitizeText(code ?? ""),
+          language:
+            params.get("lang") ??
+            params.get("lang_slug") ??
+            params.get("language") ??
+            undefined,
+          titleSlug:
+            params.get("title_slug") ??
+            params.get("titleSlug") ??
+            undefined
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function inspectFetchRequest(
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<void> {
+    try {
+      let url = "";
+      let bodyText: string | null = null;
+
+      if (typeof input === "string") {
+        url = input;
+        bodyText = parseBodyText(init?.body);
+      } else if (input instanceof URL) {
+        url = String(input);
+        bodyText = parseBodyText(init?.body);
+      } else if (input instanceof Request) {
+        url = input.url;
+        if (init?.body) {
+          bodyText = parseBodyText(init.body);
+        } else {
+          bodyText = await input.clone().text();
+        }
+      }
+
+      if (!url || !bodyText) return;
+      handleOutgoingBody(url, bodyText, "fetch");
+    } catch {
+      // ignore
+    }
   }
 
   async function handleResponseText(
@@ -266,20 +400,20 @@
     text: string,
     source: "fetch" | "xhr"
   ): Promise<void> {
-    if (!isRelevantUrl(url)) return;
-
     const json = parseJson(text);
     if (!json) return;
 
-    const captures = extractCaptures(json, url, source);
-    for (const capture of captures) {
-      emitCapture(capture);
+    const results = extractResultsFromValue(json, url, source);
+    for (const result of results) {
+      emitResult(result);
     }
   }
 
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = (async (...args: Parameters<typeof fetch>) => {
+    void inspectFetchRequest(args[0], args[1]);
+
     const response = await originalFetch(...args);
 
     try {
@@ -299,7 +433,7 @@
         await handleResponseText(url, text, "fetch");
       }
     } catch {
-      // ignore bridge failures
+      // ignore
     }
 
     return response;
@@ -331,6 +465,16 @@
     this: XMLHttpRequest & { __leetcodeGithubSyncUrl?: string },
     body?: Document | XMLHttpRequestBodyInit | null
   ) {
+    try {
+      const bodyText = parseBodyText(body);
+      const url = this.__leetcodeGithubSyncUrl ?? "";
+      if (url && bodyText) {
+        handleOutgoingBody(url, bodyText, "xhr");
+      }
+    } catch {
+      // ignore
+    }
+
     this.addEventListener("loadend", () => {
       try {
         const url = this.__leetcodeGithubSyncUrl ?? this.responseURL ?? "";
@@ -344,7 +488,7 @@
           void handleResponseText(url, this.responseText, "xhr");
         }
       } catch {
-        // ignore bridge failures
+        // ignore
       }
     });
 
