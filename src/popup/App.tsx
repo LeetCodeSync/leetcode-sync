@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { logger } from "../lib/logger";
 import type {
+  DashboardStats,
   ExtensionSettings,
   PendingDeviceAuth,
   RuntimeResponse
@@ -19,12 +20,39 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSyncAcceptedOnly: true
 };
 
+const EMPTY_DASHBOARD: DashboardStats = {
+  totalSolved: 0,
+  easyCount: 0,
+  mediumCount: 0,
+  hardCount: 0
+};
+
+function formatRelativeTime(value?: string): string {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
     pending: null
   });
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
+  const [dashboard, setDashboard] = useState<DashboardStats>(EMPTY_DASHBOARD);
   const [loading, setLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -55,9 +83,20 @@ export default function App() {
     }
   }
 
+  async function loadDashboard() {
+    const response = (await chrome.runtime.sendMessage({
+      type: "GET_DASHBOARD_STATS"
+    })) as RuntimeResponse<DashboardStats>;
+
+    if (response.ok && response.data) {
+      setDashboard(response.data);
+    }
+  }
+
   useEffect(() => {
     void refreshState();
     void loadSettings();
+    void loadDashboard();
   }, []);
 
   function updateSetting<K extends keyof ExtensionSettings>(
@@ -190,6 +229,49 @@ export default function App() {
 
         {message ? <p className="muted top-gap">{message}</p> : null}
       </div>
+
+      {!showSettings ? (
+        <div className="card compact-card">
+          <div className="row-between">
+            <h2>Progress</h2>
+            <button className="secondary" onClick={() => void loadDashboard()}>
+              Refresh
+            </button>
+          </div>
+
+          <div className="stats-grid">
+            <div className="stat-box">
+              <div className="stat-value">{dashboard.totalSolved}</div>
+              <div className="stat-label">Total</div>
+            </div>
+
+            <div className="stat-box">
+              <div className="stat-value">{dashboard.easyCount}</div>
+              <div className="stat-label">Easy</div>
+            </div>
+
+            <div className="stat-box">
+              <div className="stat-value">{dashboard.mediumCount}</div>
+              <div className="stat-label">Medium</div>
+            </div>
+
+            <div className="stat-box">
+              <div className="stat-value">{dashboard.hardCount}</div>
+              <div className="stat-label">Hard</div>
+            </div>
+          </div>
+
+          <div className="last-sync">
+            <div className="last-sync-title">Last synced</div>
+            <div className="last-sync-problem">
+              {dashboard.lastProblemTitle ?? "No syncs yet"}
+            </div>
+            <div className="muted">
+              {formatRelativeTime(dashboard.lastSyncedAt)}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showSettings ? (
         <div className="card compact-card">
