@@ -12,6 +12,7 @@ const DEBUG = true;
 const INFO = true;
 const BRIDGE_SOURCE = "leetcode-github-sync";
 const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
+const ATTEMPT_COOLDOWN_MS = 15_000;
 
 type NetworkCapture = {
   source: "fetch" | "xhr";
@@ -26,10 +27,16 @@ type NetworkCapture = {
   memory?: string;
 };
 
+type CodeCandidate = {
+  code: string;
+  source: "network" | "textarea" | "monaco" | "none";
+};
+
 let latestNetworkCapture: NetworkCapture | null = null;
 let pageScriptInjected = false;
 let lastSuccessfulFingerprint = "";
 let lastAttemptedFingerprint = "";
+let lastAttemptedAt = 0;
 let syncInFlight = false;
 let syncTimer: number | null = null;
 
@@ -89,6 +96,33 @@ function looksLikeRealSolution(code: string): boolean {
     text.includes("private static ") ||
     text.includes("return ")
   );
+}
+
+function getPageKind():
+  | "problem"
+  | "description"
+  | "submissions"
+  | "submission-detail"
+  | "other" {
+  const path = window.location.pathname;
+
+  if (/^\/problems\/[^/]+\/?$/.test(path)) return "problem";
+  if (/^\/problems\/[^/]+\/description\/?$/.test(path)) return "description";
+  if (/^\/problems\/[^/]+\/submissions\/?$/.test(path)) return "submissions";
+  if (/^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)) {
+    return "submission-detail";
+  }
+
+  return "other";
+}
+
+function isSupportedPage(): boolean {
+  return getPageKind() !== "other";
+}
+
+function isSubmissionPage(): boolean {
+  const kind = getPageKind();
+  return kind === "submissions" || kind === "submission-detail";
 }
 
 function mergeCapture(
@@ -163,17 +197,6 @@ function injectPageScript() {
   };
 
   (document.head || document.documentElement).appendChild(script);
-}
-
-function isSupportedPage(): boolean {
-  const path = window.location.pathname;
-
-  return (
-    /^\/problems\/[^/]+\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/description\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/?$/.test(path) ||
-    /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(path)
-  );
 }
 
 function getProblemTitle(): string {
@@ -252,25 +275,39 @@ function getMonacoCodeFallback(): string {
   return sanitizeCodeText(container?.textContent ?? "");
 }
 
-function getCodeText(): string {
+function getCodeCandidate(): CodeCandidate {
   if (
     latestNetworkCapture?.code &&
     looksLikeRealSolution(latestNetworkCapture.code)
   ) {
-    return latestNetworkCapture.code;
+    return {
+      code: latestNetworkCapture.code,
+      source: "network"
+    };
   }
 
   const textareaCode = getTextareaCode();
   if (looksLikeRealSolution(textareaCode)) {
-    return textareaCode;
+    return {
+      code: textareaCode,
+      source: "textarea"
+    };
   }
 
-  const monacoCode = getMonacoCodeFallback();
-  if (looksLikeRealSolution(monacoCode)) {
-    return monacoCode;
+  if (!isSubmissionPage()) {
+    const monacoCode = getMonacoCodeFallback();
+    if (looksLikeRealSolution(monacoCode)) {
+      return {
+        code: monacoCode,
+        source: "monaco"
+      };
+    }
   }
 
-  return sanitizeCodeText(textareaCode || monacoCode || "");
+  return {
+    code: "",
+    source: "none"
+  };
 }
 
 function getLanguageText(): string {
@@ -295,7 +332,7 @@ function buildPayload(): SubmissionPayload | null {
   const rawTitle = getProblemTitle();
   const problemNumber = getProblemNumber();
   const articleText = getDescriptionText() || "Problem statement not captured.";
-  const code = getCodeText();
+  const codeCandidate = getCodeCandidate();
 
   if (!problemNumber) {
     logWarn("Could not detect the LeetCode problem number on this page.", {
@@ -305,9 +342,19 @@ function buildPayload(): SubmissionPayload | null {
     return null;
   }
 
-  if (!code.trim()) {
+  if (isSubmissionPage() && codeCandidate.source !== "network") {
+    logWarn("Skipping submission page sync because full code was not captured from network.", {
+      href: window.location.href,
+      codeSource: codeCandidate.source,
+      networkCapture: latestNetworkCapture
+    });
+    return null;
+  }
+
+  if (!codeCandidate.code.trim()) {
     logWarn("Code content is empty or unavailable on this page.", {
       href: window.location.href,
+      codeSource: codeCandidate.source,
       networkCapture: latestNetworkCapture
     });
     return null;
@@ -321,7 +368,7 @@ function buildPayload(): SubmissionPayload | null {
     title: titleWithoutNumber(rawTitle),
     difficulty: inferDifficulty(getDifficultyText()),
     language: getLanguageText(),
-    code,
+    code: codeCandidate.code,
     descriptionText: sections.descriptionText,
     examplesText: sections.examplesText,
     constraintsText: sections.constraintsText,
@@ -368,25 +415,33 @@ async function trySyncAcceptedSubmission(): Promise<void> {
   if (!payload) {
     logDebug("payload is null", {
       descriptionLength: getDescriptionText().length,
-      codeLength: getCodeText().length
+      codeLength: getCodeCandidate().code.length
     });
     return;
   }
 
   const fingerprint = buildFingerprint(payload);
+  const now = Date.now();
 
   if (fingerprint === lastSuccessfulFingerprint) {
     logDebug("already synced successfully, skipping");
     return;
   }
 
-  if (fingerprint === lastAttemptedFingerprint) {
-    logDebug("already attempted recently, skipping");
+  if (
+    fingerprint === lastAttemptedFingerprint &&
+    now - lastAttemptedAt < ATTEMPT_COOLDOWN_MS
+  ) {
+    logDebug("same submission is in cooldown, skipping", {
+      fingerprint,
+      ageMs: now - lastAttemptedAt
+    });
     return;
   }
 
   syncInFlight = true;
   lastAttemptedFingerprint = fingerprint;
+  lastAttemptedAt = now;
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -400,11 +455,9 @@ async function trySyncAcceptedSubmission(): Promise<void> {
       lastSuccessfulFingerprint = fingerprint;
     } else {
       logWarn(response?.error ?? "Sync failed.");
-      lastAttemptedFingerprint = "";
     }
   } catch (error) {
     logWarn("Runtime unavailable", error);
-    lastAttemptedFingerprint = "";
   } finally {
     syncInFlight = false;
   }

@@ -22,8 +22,14 @@ import { logger } from "../lib/logger";
 import type { SubmissionPayload, SyncRecord } from "../types";
 
 const syncLocks = new Set<string>();
+const recentAttemptTimestamps = new Map<string, number>();
+const ATTEMPT_COOLDOWN_MS = 15_000;
 
 function buildSubmissionKey(submission: SubmissionPayload): string {
+  if (submission.submissionId?.trim()) {
+    return `submission:${submission.submissionId.trim()}`;
+  }
+
   return [
     submission.problemNumber,
     submission.slug,
@@ -31,6 +37,14 @@ function buildSubmissionKey(submission: SubmissionPayload): string {
     submission.code.length,
     submission.code.slice(0, 80)
   ].join(":");
+}
+
+function cleanupRecentAttempts(now: number) {
+  for (const [key, timestamp] of recentAttemptTimestamps.entries()) {
+    if (now - timestamp > ATTEMPT_COOLDOWN_MS) {
+      recentAttemptTimestamps.delete(key);
+    }
+  }
 }
 
 async function checkPendingAuth() {
@@ -109,7 +123,8 @@ async function syncSubmission(submission: SubmissionPayload) {
   logger.info("background", "syncSubmission called", {
     slug: submission.slug,
     language: submission.language,
-    problemNumber: submission.problemNumber
+    problemNumber: submission.problemNumber,
+    submissionId: submission.submissionId
   });
 
   const settings = await getSettings();
@@ -161,9 +176,12 @@ async function syncSubmission(submission: SubmissionPayload) {
   }
 
   const submissionKey = buildSubmissionKey(submission);
+  const now = Date.now();
+
+  cleanupRecentAttempts(now);
 
   if (syncLocks.has(submissionKey)) {
-    logger.warn("background", "duplicate submission sync blocked", {
+    logger.warn("background", "duplicate submission sync blocked (in flight)", {
       submissionKey
     });
 
@@ -173,7 +191,21 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
   }
 
+  const lastAttemptAt = recentAttemptTimestamps.get(submissionKey);
+  if (lastAttemptAt && now - lastAttemptAt < ATTEMPT_COOLDOWN_MS) {
+    logger.warn("background", "duplicate submission sync blocked (cooldown)", {
+      submissionKey,
+      ageMs: now - lastAttemptAt
+    });
+
+    return {
+      ok: false,
+      error: "This submission was just synced or attempted. Please wait a few seconds."
+    };
+  }
+
   syncLocks.add(submissionKey);
+  recentAttemptTimestamps.set(submissionKey, now);
 
   try {
     const result = await commitSubmission({
@@ -228,7 +260,8 @@ async function syncSubmission(submission: SubmissionPayload) {
     if (error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT") {
       logger.warn("background", "commit failed after retry due to branch race", {
         message: error.message,
-        details: error.details
+        details: error.details,
+        submissionKey
       });
     } else {
       logger.error("background", "commit failed", error);
