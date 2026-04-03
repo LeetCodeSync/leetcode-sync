@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { logger } from "../lib/logger";
+import { useEffect, useMemo, useState } from "react";
 import type {
   DashboardStats,
   ExtensionSettings,
@@ -46,6 +45,12 @@ function formatRelativeTime(value?: string): string {
   return `${diffDays}d ago`;
 }
 
+function isValidRepositoryUrl(value: string): boolean {
+  return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?(\.git)?$/i.test(
+    value.trim()
+  );
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
@@ -60,13 +65,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   async function refreshState() {
-    logger.debug("popup", "refreshState called");
-
     const response = (await chrome.runtime.sendMessage({
       type: "GET_AUTH_STATE"
     })) as RuntimeResponse<AuthState>;
-
-    logger.debug("popup", "refreshState response", response);
 
     if (response.ok && response.data) {
       setAuthState(response.data);
@@ -109,12 +110,25 @@ export default function App() {
     }));
   }
 
+  const repositoryUrlIsValid = useMemo(
+    () =>
+      settings.repositoryUrl.trim().length === 0 ||
+      isValidRepositoryUrl(settings.repositoryUrl),
+    [settings.repositoryUrl]
+  );
+
   async function saveSettings() {
     setSettingsSaving(true);
     setSettingsMessage("");
 
     if (!settings.repositoryUrl.trim()) {
       setSettingsMessage("Repository URL is required.");
+      setSettingsSaving(false);
+      return;
+    }
+
+    if (!repositoryUrlIsValid) {
+      setSettingsMessage("Enter a valid GitHub repository URL.");
       setSettingsSaving(false);
       return;
     }
@@ -145,6 +159,18 @@ export default function App() {
 
     if (!settings.githubClientId.trim()) {
       setMessage("Enter your GitHub OAuth App Client ID first.");
+      setLoading(false);
+      return;
+    }
+
+    if (!settings.repositoryUrl.trim()) {
+      setMessage("Enter a GitHub repository URL first.");
+      setLoading(false);
+      return;
+    }
+
+    if (!repositoryUrlIsValid) {
+      setMessage("Enter a valid GitHub repository URL.");
       setLoading(false);
       return;
     }
@@ -332,6 +358,11 @@ export default function App() {
                 updateSetting("repositoryUrl", event.target.value)
               }
             />
+            {!repositoryUrlIsValid ? (
+              <div className="muted" style={{ marginTop: 6 }}>
+                Enter a full GitHub URL like https://github.com/owner/repo
+              </div>
+            ) : null}
           </div>
 
           <div className="form-group">

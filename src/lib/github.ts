@@ -53,8 +53,11 @@ export async function startDeviceFlow(clientId: string, scope: string) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      data.error_description || data.error || "Failed to start device flow"
+    throw new AppError(
+      "INVALID_CLIENT_ID",
+      "GitHub OAuth setup failed. Check your Client ID and try again.",
+      data.error_description || data.error || "Failed to start device flow",
+      { status: response.status, data }
     );
   }
 
@@ -85,8 +88,11 @@ export async function pollForAccessToken(
       return null;
     }
 
-    throw new Error(
-      data.error_description || data.error || "Failed to get access token"
+    throw new AppError(
+      "GITHUB_AUTH_INVALID",
+      "GitHub authorization failed. Reconnect GitHub and try again.",
+      data.error_description || data.error || "Failed to get access token",
+      { data }
     );
   }
 
@@ -172,7 +178,7 @@ function createGitHubRequestError(
       ? (data as { message: string }).message
       : `GitHub request failed: ${status}`;
 
-  if (message.includes("Update is not a fast forward")) {
+  if (/Update is not a fast forward/i.test(message)) {
     return new AppError(
       "FAST_FORWARD_CONFLICT",
       "Repository changed during sync. Please try again.",

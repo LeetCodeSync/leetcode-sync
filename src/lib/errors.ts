@@ -6,6 +6,10 @@ export type UserFacingErrorCode =
   | "PROBLEM_NUMBER_PARSE_FAILED"
   | "GITHUB_AUTH_INVALID"
   | "REPOSITORY_NOT_ACCESSIBLE"
+  | "INVALID_CLIENT_ID"
+  | "INVALID_BRANCH"
+  | "SYNC_ALREADY_IN_PROGRESS"
+  | "SYNC_COOLDOWN"
   | "UNKNOWN";
 
 export class AppError extends Error {
