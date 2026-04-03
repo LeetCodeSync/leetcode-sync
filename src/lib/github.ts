@@ -134,6 +134,31 @@ function buildReadme(submission: SubmissionPayload): string {
   ].join("\n");
 }
 
+function compactMetric(value?: string): string | null {
+  if (!value) return null;
+  const text = value.trim();
+  return text ? text : null;
+}
+
+function buildCommitMessage(submission: SubmissionPayload): string {
+  const base = `${buildProblemFolder(submission.problemNumber, submission.slug)}: accepted in ${submission.language}`;
+
+  const parts = [base];
+
+  const runtime = compactMetric(submission.runtime);
+  const memory = compactMetric(submission.memory);
+
+  if (runtime) {
+    parts.push(`Time ${runtime}`);
+  }
+
+  if (memory) {
+    parts.push(`Memory ${memory}`);
+  }
+
+  return parts.join(" | ");
+}
+
 function createGitHubRequestError(
   url: string,
   status: number,
@@ -225,11 +250,6 @@ async function githubRequest<T>(
     });
     throw createGitHubRequestError(url, response.status, data);
   }
-
-  logger.debug("github", "request ok", {
-    url,
-    status: response.status
-  });
 
   return data as T;
 }
@@ -382,7 +402,7 @@ async function createCommitAttempt(params: {
     token,
     owner,
     repo,
-    `${folder}: accepted submission in ${submission.language}`,
+    buildCommitMessage(submission),
     newTreeSha,
     headCommitSha
   );
@@ -434,7 +454,8 @@ export async function commitSubmission(params: {
     logger.warn("github", "fast-forward conflict detected, retrying once", {
       repositoryUrl: settings.repositoryUrl,
       branch: settings.repoBranch,
-      slug: submission.slug
+      slug: submission.slug,
+      submissionId: submission.submissionId
     });
 
     return await createCommitAttempt({
