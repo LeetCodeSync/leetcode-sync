@@ -156,6 +156,7 @@ async function syncSubmission(submission: SubmissionPayload) {
   }
 
   if (settings.autoSyncAcceptedOnly && !submission.accepted) {
+    logger.info("background", "submission skipped because not accepted");
     return { ok: true };
   }
 
@@ -196,8 +197,8 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
 
     await appendSyncRecord(record);
-
     logger.info("background", "commit success", result);
+
     return { ok: true, data: result };
   } catch (error) {
     const message = toUserMessage(error);
@@ -217,7 +218,15 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
 
     await appendSyncRecord(failedRecord);
-    logger.error("background", "commit failed", error);
+
+    if (error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT") {
+      logger.warn("background", "commit failed after retry due to branch race", {
+        message: error.message,
+        details: error.details
+      });
+    } else {
+      logger.error("background", "commit failed", error);
+    }
 
     return {
       ok: false,
