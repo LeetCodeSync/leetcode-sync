@@ -22,8 +22,15 @@ import { logger } from "../lib/logger";
 import type { SubmissionPayload, SyncRecord } from "../types";
 
 const syncLocks = new Set<string>();
+const recentAttemptTimestamps = new Map<string, number>();
+const ATTEMPT_COOLDOWN_MS = 15_000;
+const SUBMIT_TRIGGER_DELAY_MS = 2_500;
 
 function buildSubmissionKey(submission: SubmissionPayload): string {
+  if (submission.submissionId?.trim()) {
+    return `submission:${submission.submissionId.trim()}`;
+  }
+
   return [
     submission.problemNumber,
     submission.slug,
@@ -31,6 +38,46 @@ function buildSubmissionKey(submission: SubmissionPayload): string {
     submission.code.length,
     submission.code.slice(0, 80)
   ].join(":");
+}
+
+function cleanupRecentAttempts(now: number) {
+  for (const [key, timestamp] of recentAttemptTimestamps.entries()) {
+    if (now - timestamp > ATTEMPT_COOLDOWN_MS) {
+      recentAttemptTimestamps.delete(key);
+    }
+  }
+}
+
+type CompletedRequestDetails = {
+  tabId: number;
+  method?: string;
+  statusCode: number;
+  url: string;
+};
+
+function isLeetCodeSubmitRequest(details: CompletedRequestDetails): boolean {
+  return (
+    details.tabId >= 0 &&
+    details.method === "POST" &&
+    details.statusCode >= 200 &&
+    details.statusCode < 400 &&
+    /^https:\/\/leetcode\.com\/problems\/[^/]+\/submit\/?$/.test(details.url)
+  );
+}
+
+function triggerAcceptedSubmissionFetch(tabId: number) {
+  setTimeout(() => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
+      () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          logger.debug("background", "tab message ignored", err.message);
+        }
+      }
+    );
+  }, SUBMIT_TRIGGER_DELAY_MS);
 }
 
 async function checkPendingAuth() {
@@ -109,7 +156,8 @@ async function syncSubmission(submission: SubmissionPayload) {
   logger.info("background", "syncSubmission called", {
     slug: submission.slug,
     language: submission.language,
-    problemNumber: submission.problemNumber
+    problemNumber: submission.problemNumber,
+    submissionId: submission.submissionId
   });
 
   const settings = await getSettings();
@@ -161,9 +209,12 @@ async function syncSubmission(submission: SubmissionPayload) {
   }
 
   const submissionKey = buildSubmissionKey(submission);
+  const now = Date.now();
+
+  cleanupRecentAttempts(now);
 
   if (syncLocks.has(submissionKey)) {
-    logger.warn("background", "duplicate submission sync blocked", {
+    logger.warn("background", "duplicate submission sync blocked (in flight)", {
       submissionKey
     });
 
@@ -173,7 +224,21 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
   }
 
+  const lastAttemptAt = recentAttemptTimestamps.get(submissionKey);
+  if (lastAttemptAt && now - lastAttemptAt < ATTEMPT_COOLDOWN_MS) {
+    logger.warn("background", "duplicate submission sync blocked (cooldown)", {
+      submissionKey,
+      ageMs: now - lastAttemptAt
+    });
+
+    return {
+      ok: false,
+      error: "This submission was just synced or attempted. Please wait a few seconds."
+    };
+  }
+
   syncLocks.add(submissionKey);
+  recentAttemptTimestamps.set(submissionKey, now);
 
   try {
     const result = await commitSubmission({
@@ -193,7 +258,12 @@ async function syncSubmission(submission: SubmissionPayload) {
       syncedAt: new Date().toISOString(),
       repoPath: result.repoPath,
       commitSha: result.commitSha,
-      status: "success"
+      status: "success",
+      submissionId: submission.submissionId,
+      runtime: submission.runtime,
+      memory: submission.memory,
+      runtimePercentile: submission.runtimePercentile,
+      memoryPercentile: submission.memoryPercentile
     };
 
     await appendSyncRecord(record);
@@ -214,7 +284,12 @@ async function syncSubmission(submission: SubmissionPayload) {
       syncedAt: new Date().toISOString(),
       repoPath: `${submission.problemNumber}-${submission.slug}`,
       status: "failed",
-      error: message
+      error: message,
+      submissionId: submission.submissionId,
+      runtime: submission.runtime,
+      memory: submission.memory,
+      runtimePercentile: submission.runtimePercentile,
+      memoryPercentile: submission.memoryPercentile
     };
 
     await appendSyncRecord(failedRecord);
@@ -222,7 +297,8 @@ async function syncSubmission(submission: SubmissionPayload) {
     if (error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT") {
       logger.warn("background", "commit failed after retry due to branch race", {
         message: error.message,
-        details: error.details
+        details: error.details,
+        submissionKey
       });
     } else {
       logger.error("background", "commit failed", error);
@@ -312,3 +388,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return true;
 });
+
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (!isLeetCodeSubmitRequest(details)) {
+      return;
+    }
+
+    logger.info("background", "LeetCode submit request detected", {
+      url: details.url,
+      tabId: details.tabId
+    });
+
+    triggerAcceptedSubmissionFetch(details.tabId);
+  },
+  {
+    urls: ["https://leetcode.com/problems/*/submit/"]
+  }
+);

@@ -3,7 +3,7 @@
   "name": "LeetCode GitHub Sync",
   "version": "0.1.0",
   "description": "Sync accepted LeetCode submissions into a GitHub repository.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "webRequest", "tabs"],
   "host_permissions": [
     "https://leetcode.com/*",
     "https://github.com/*",
@@ -21,7 +21,13 @@
     {
       "matches": ["https://leetcode.com/problems/*"],
       "js": ["assets/content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/injected.js"],
+      "matches": ["https://leetcode.com/*"]
     }
   ]
 }
