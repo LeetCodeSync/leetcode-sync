@@ -10,6 +10,22 @@ import type { SubmissionPayload } from "../types";
 
 const DEBUG = true;
 const INFO = true;
+const BRIDGE_SOURCE = "leetcode-github-sync";
+const BRIDGE_TYPE = "LEETCODE_SUBMISSION_CAPTURED";
+
+type NetworkCapture = {
+  source: "fetch" | "xhr";
+  url: string;
+  capturedAt: number;
+  submissionId?: string;
+  code?: string;
+  language?: string;
+  accepted?: boolean;
+  statusText?: string;
+};
+
+let latestNetworkCapture: NetworkCapture | null = null;
+let pageScriptInjected = false;
 
 function logDebug(message: string, data?: unknown) {
   if (!DEBUG) return;
@@ -50,8 +66,117 @@ function queryFirst(selectors: string[]): Element | null {
   return null;
 }
 
+function sanitizeCodeText(value: string): string {
+  return value
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .trimEnd();
+}
+
+function looksLikeRealSolution(code: string): boolean {
+  const text = sanitizeCodeText(code).trim();
+  if (!text || text.length < 20) return false;
+
+  return (
+    text.includes("class Solution") ||
+    text.includes("def ") ||
+    text.includes("function ") ||
+    text.includes("func ") ||
+    text.includes("public class ") ||
+    text.includes("public static ") ||
+    text.includes("private static ") ||
+    text.includes("return ")
+  );
+}
+
+function mergeCapture(
+  current: NetworkCapture | null,
+  incoming: NetworkCapture
+): NetworkCapture {
+  if (!current) return incoming;
+
+  const merged: NetworkCapture = {
+    ...current,
+    ...incoming
+  };
+
+  if (
+    incoming.code &&
+    (!current.code || incoming.code.length > current.code.length)
+  ) {
+    merged.code = incoming.code;
+  }
+
+  if (incoming.submissionId) {
+    merged.submissionId = incoming.submissionId;
+  }
+
+  if (incoming.language) {
+    merged.language = incoming.language;
+  }
+
+  if (incoming.accepted !== undefined) {
+    merged.accepted = incoming.accepted;
+  }
+
+  if (incoming.statusText) {
+    merged.statusText = incoming.statusText;
+  }
+
+  if (incoming.capturedAt > current.capturedAt) {
+    merged.capturedAt = incoming.capturedAt;
+    merged.source = incoming.source;
+    merged.url = incoming.url;
+  }
+
+  return merged;
+}
+
+function handleBridgeMessage(event: MessageEvent) {
+  if (event.source !== window) return;
+
+  const data = event.data as
+    | {
+        source?: string;
+        type?: string;
+        payload?: NetworkCapture;
+      }
+    | undefined;
+
+  if (!data) return;
+  if (data.source !== BRIDGE_SOURCE) return;
+  if (data.type !== BRIDGE_TYPE) return;
+  if (!data.payload) return;
+
+  latestNetworkCapture = mergeCapture(latestNetworkCapture, {
+    ...data.payload,
+    code: data.payload.code ? sanitizeCodeText(data.payload.code) : undefined
+  });
+
+  logDebug("network capture updated", latestNetworkCapture);
+  scheduleSync(300);
+}
+
+function injectPageScript() {
+  if (pageScriptInjected) return;
+  pageScriptInjected = true;
+
+  const script = document.createElement("script");
+  script.src = chrome.runtime.getURL("assets/injected.js");
+  script.async = false;
+  script.dataset.source = "leetcode-github-sync";
+
+  script.onload = () => {
+    script.remove();
+  };
+
+  (document.head || document.documentElement).appendChild(script);
+}
+
 function isSupportedPage(): boolean {
   const path = window.location.pathname;
+
   return (
     /^\/problems\/[^/]+\/?$/.test(path) ||
     /^\/problems\/[^/]+\/description\/?$/.test(path) ||
@@ -119,23 +244,6 @@ function getDescriptionText(): string {
   return normalizeWhitespace(article?.textContent ?? "");
 }
 
-function getLanguageText(): string {
-  const button = queryFirst([
-    'button[data-e2e-locator="lang-select"]',
-    'button[class*="lang-select"]'
-  ]);
-
-  return button?.textContent?.trim() || "Python3";
-}
-
-function sanitizeCodeText(value: string): string {
-  return value
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
-    .replace(/\u00A0/g, " ")
-    .replace(/\r\n/g, "\n")
-    .trimEnd();
-}
-
 function getTextareaCode(): string {
   const textareas = Array.from(
     document.querySelectorAll("textarea")
@@ -151,25 +259,17 @@ function getTextareaCode(): string {
 
 function getMonacoCodeFallback(): string {
   const container = document.querySelector(".view-lines");
-  const text = sanitizeCodeText(container?.textContent ?? "");
-  return text.trim();
-}
-
-function looksLikeRealSolution(code: string): boolean {
-  if (!code.trim()) return false;
-
-  return (
-    code.includes("class Solution") ||
-    code.includes("def ") ||
-    code.includes("function ") ||
-    code.includes("public class ") ||
-    code.includes("public ") ||
-    code.includes("private ") ||
-    code.includes("return ")
-  );
+  return sanitizeCodeText(container?.textContent ?? "");
 }
 
 function getCodeText(): string {
+  if (
+    latestNetworkCapture?.code &&
+    looksLikeRealSolution(latestNetworkCapture.code)
+  ) {
+    return latestNetworkCapture.code;
+  }
+
   const textareaCode = getTextareaCode();
   if (looksLikeRealSolution(textareaCode)) {
     return textareaCode;
@@ -180,10 +280,27 @@ function getCodeText(): string {
     return monacoCode;
   }
 
-  return textareaCode || monacoCode || "";
+  return sanitizeCodeText(textareaCode || monacoCode || "");
+}
+
+function getLanguageText(): string {
+  if (latestNetworkCapture?.language?.trim()) {
+    return latestNetworkCapture.language.trim();
+  }
+
+  const button = queryFirst([
+    'button[data-e2e-locator="lang-select"]',
+    'button[class*="lang-select"]'
+  ]);
+
+  return button?.textContent?.trim() || "Python3";
 }
 
 function isAcceptedVisible(): boolean {
+  if (latestNetworkCapture?.accepted === true) {
+    return true;
+  }
+
   return /\bAccepted\b/.test(document.body.innerText);
 }
 
@@ -202,7 +319,10 @@ function buildPayload(): SubmissionPayload | null {
   }
 
   if (!code.trim()) {
-    logWarn("Code editor content is empty or unavailable on this page.");
+    logWarn("Code content is empty or unavailable on this page.", {
+      href: window.location.href,
+      networkCapture: latestNetworkCapture
+    });
     return null;
   }
 
@@ -227,6 +347,7 @@ function buildPayload(): SubmissionPayload | null {
 
 function buildFingerprint(payload: SubmissionPayload): string {
   return [
+    latestNetworkCapture?.submissionId ?? "",
     payload.problemNumber,
     payload.slug,
     payload.language,
@@ -310,22 +431,12 @@ function scheduleSync(delay = 1200): void {
   }, delay);
 }
 
-function init(): void {
-  logInfo("content script loaded", {
-    href: window.location.href,
-    path: window.location.pathname
-  });
-
-  if (!window.location.pathname.includes("/problems/")) {
-    logDebug("unsupported page");
-    return;
-  }
-
+function startObservers() {
   const observer = new MutationObserver(() => {
     scheduleSync();
   });
 
-  observer.observe(document.body, {
+  observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true
@@ -344,6 +455,31 @@ function init(): void {
   window.addEventListener("focus", () => {
     scheduleSync(800);
   });
+
+  window.addEventListener("message", handleBridgeMessage);
+  scheduleSync(1200);
+}
+
+function init() {
+  logInfo("content script loaded", {
+    href: window.location.href,
+    path: window.location.pathname
+  });
+
+  if (!window.location.pathname.includes("/problems/")) {
+    logDebug("unsupported page");
+    return;
+  }
+
+  injectPageScript();
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      startObservers();
+    });
+  } else {
+    startObservers();
+  }
 }
 
 init();
