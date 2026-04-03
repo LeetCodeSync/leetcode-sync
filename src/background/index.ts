@@ -193,7 +193,10 @@ async function syncSubmission(submission: SubmissionPayload) {
       syncedAt: new Date().toISOString(),
       repoPath: result.repoPath,
       commitSha: result.commitSha,
-      status: "success"
+      status: "success",
+      runtime: submission.runtime,
+      memory: submission.memory,
+      submissionId: submission.submissionId
     };
 
     await appendSyncRecord(record);
@@ -214,7 +217,10 @@ async function syncSubmission(submission: SubmissionPayload) {
       syncedAt: new Date().toISOString(),
       repoPath: `${submission.problemNumber}-${submission.slug}`,
       status: "failed",
-      error: message
+      error: message,
+      runtime: submission.runtime,
+      memory: submission.memory,
+      submissionId: submission.submissionId
     };
 
     await appendSyncRecord(failedRecord);
