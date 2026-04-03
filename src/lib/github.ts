@@ -2,6 +2,7 @@ import {
   GITHUB_ACCESS_TOKEN_URL,
   GITHUB_DEVICE_CODE_URL
 } from "./constants";
+import { AppError } from "./errors";
 import { logger } from "./logger";
 import type {
   ExtensionSettings,
@@ -133,6 +134,72 @@ function buildReadme(submission: SubmissionPayload): string {
   ].join("\n");
 }
 
+function createGitHubRequestError(
+  url: string,
+  status: number,
+  data: unknown
+): AppError {
+  const message =
+    typeof data === "object" &&
+    data !== null &&
+    "message" in data &&
+    typeof (data as { message?: unknown }).message === "string"
+      ? (data as { message: string }).message
+      : `GitHub request failed: ${status}`;
+
+  if (message.includes("Update is not a fast forward")) {
+    return new AppError(
+      "FAST_FORWARD_CONFLICT",
+      "Repository changed during sync. Please try again.",
+      message,
+      { url, status, data }
+    );
+  }
+
+  if (url.includes("/git/ref/heads/") && status === 404) {
+    return new AppError(
+      "BRANCH_NOT_FOUND",
+      "Branch not found in the target repository.",
+      message,
+      { url, status, data }
+    );
+  }
+
+  if (status === 401) {
+    return new AppError(
+      "GITHUB_AUTH_INVALID",
+      "GitHub authorization expired or is invalid. Reconnect GitHub and try again.",
+      message,
+      { url, status, data }
+    );
+  }
+
+  if (status === 403) {
+    return new AppError(
+      "REPOSITORY_NOT_ACCESSIBLE",
+      "Repository is not accessible with the current GitHub account or scope.",
+      message,
+      { url, status, data }
+    );
+  }
+
+  if (url.includes("/repos/") && status === 404) {
+    return new AppError(
+      "REPOSITORY_NOT_ACCESSIBLE",
+      "Repository not found or not accessible with the current GitHub account.",
+      message,
+      { url, status, data }
+    );
+  }
+
+  return new AppError(
+    "UNKNOWN",
+    "GitHub sync failed. Please try again.",
+    message,
+    { url, status, data }
+  );
+}
+
 async function githubRequest<T>(
   url: string,
   token: string,
@@ -156,7 +223,7 @@ async function githubRequest<T>(
       status: response.status,
       data
     });
-    throw new Error(data.message || `GitHub request failed: ${response.status}`);
+    throw createGitHubRequestError(url, response.status, data);
   }
 
   logger.debug("github", "request ok", {
@@ -329,10 +396,7 @@ async function createCommitAttempt(params: {
 }
 
 function isFastForwardConflict(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /fast forward/i.test(error.message)
-  );
+  return error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT";
 }
 
 export async function commitSubmission(params: {
@@ -344,7 +408,12 @@ export async function commitSubmission(params: {
 
   const parsed = parseGitHubRepoUrl(settings.repositoryUrl);
   if (!parsed) {
-    throw new Error("Repository URL is invalid");
+    throw new AppError(
+      "INVALID_REPOSITORY_URL",
+      "Enter a valid GitHub repository URL.",
+      "Repository URL is invalid.",
+      { repositoryUrl: settings.repositoryUrl }
+    );
   }
 
   const { owner, repo } = parsed;
