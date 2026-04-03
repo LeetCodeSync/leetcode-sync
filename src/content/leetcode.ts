@@ -6,6 +6,7 @@ import {
   splitDescriptionSections,
   titleWithoutNumber
 } from "../lib/leetcode";
+import { AppError, toUserMessage } from "../lib/errors";
 import type { SubmissionPayload } from "../types";
 
 const DEBUG = true;
@@ -141,23 +142,21 @@ function isAcceptedVisible(): boolean {
   return /\bAccepted\b/.test(document.body.innerText);
 }
 
-function buildPayload(): SubmissionPayload | null {
+function buildPayload(): SubmissionPayload {
   const rawTitle = getProblemTitle();
   const problemNumber = getProblemNumber();
   const articleText = getDescriptionText() || "Problem statement not captured.";
   const code = getCodeText();
 
   if (!problemNumber) {
-    logWarn("Could not parse LeetCode problem number", {
-      rawTitle,
-      href: window.location.href
-    });
-    return null;
+    throw new AppError(
+      "PROBLEM_NUMBER_PARSE_FAILED",
+      "Could not detect the LeetCode problem number on this page."
+    );
   }
 
   if (!code.trim()) {
-    logDebug("buildPayload skipped because code is empty");
-    return null;
+    throw new Error("Code editor content is empty.");
   }
 
   const sections = splitDescriptionSections(articleText);
@@ -237,12 +236,11 @@ async function trySyncAcceptedSubmission(): Promise<void> {
     if (response?.ok) {
       lastSuccessfulFingerprint = fingerprint;
     } else {
-      logWarn("sync failed", response?.error);
-      // allow a future retry for the same payload if the previous attempt failed
+      logWarn(response?.error ?? "Sync failed.");
       lastAttemptedFingerprint = "";
     }
   } catch (error) {
-    logWarn("runtime unavailable", error);
+    logWarn("Runtime unavailable", error);
     lastAttemptedFingerprint = "";
   } finally {
     syncInFlight = false;
