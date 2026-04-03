@@ -22,6 +22,8 @@
     language?: string;
     accepted?: boolean;
     statusText?: string;
+    runtime?: string;
+    memory?: string;
   };
 
   function sanitizeText(value: string): string {
@@ -140,14 +142,40 @@
 
     const numericCandidates = [node.statusCode, node.status_code];
     for (const value of numericCandidates) {
-      if (typeof value === "number") {
-        if (value === 10) {
-          return { accepted: true, statusText: "Accepted" };
-        }
+      if (typeof value === "number" && value === 10) {
+        return { accepted: true, statusText: "Accepted" };
       }
     }
 
     return {};
+  }
+
+  function normalizeMetric(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    const text = sanitizeText(value);
+    return text || undefined;
+  }
+
+  function pickRuntime(node: Record<string, unknown>): string | undefined {
+    return normalizeMetric(
+      pickString(node, [
+        "statusRuntime",
+        "status_runtime",
+        "runtime",
+        "displayRuntime"
+      ])
+    );
+  }
+
+  function pickMemory(node: Record<string, unknown>): string | undefined {
+    return normalizeMetric(
+      pickString(node, [
+        "statusMemory",
+        "status_memory",
+        "memory",
+        "displayMemory"
+      ])
+    );
   }
 
   function isRelevantUrl(url: string): boolean {
@@ -166,7 +194,7 @@
     const accepted = candidate.accepted === true;
     const submissionUrl = /submission/i.test(url);
 
-    if (accepted) return true;
+    if (accepted && (codeLooksReal || hasSubmissionId)) return true;
     if (hasSubmissionId && (codeLooksReal || Boolean(candidate.language))) return true;
     if (submissionUrl && codeLooksReal) return true;
 
@@ -198,6 +226,8 @@
 
       const submissionId = pickSubmissionId(node);
       const acceptedInfo = pickAccepted(node);
+      const runtime = pickRuntime(node);
+      const memory = pickMemory(node);
 
       const candidate: NetworkCapture = {
         source,
@@ -207,7 +237,9 @@
         code,
         language,
         accepted: acceptedInfo.accepted,
-        statusText: acceptedInfo.statusText
+        statusText: acceptedInfo.statusText,
+        runtime,
+        memory
       };
 
       if (shouldEmitCapture(url, candidate)) {
@@ -267,7 +299,7 @@
         await handleResponseText(url, text, "fetch");
       }
     } catch {
-      // swallow bridge errors
+      // ignore bridge failures
     }
 
     return response;
@@ -312,7 +344,7 @@
           void handleResponseText(url, this.responseText, "xhr");
         }
       } catch {
-        // swallow bridge errors
+        // ignore bridge failures
       }
     });
 

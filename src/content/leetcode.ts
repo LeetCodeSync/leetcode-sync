@@ -22,10 +22,16 @@ type NetworkCapture = {
   language?: string;
   accepted?: boolean;
   statusText?: string;
+  runtime?: string;
+  memory?: string;
 };
 
 let latestNetworkCapture: NetworkCapture | null = null;
 let pageScriptInjected = false;
+let lastSuccessfulFingerprint = "";
+let lastAttemptedFingerprint = "";
+let syncInFlight = false;
+let syncTimer: number | null = null;
 
 function logDebug(message: string, data?: unknown) {
   if (!DEBUG) return;
@@ -52,11 +58,6 @@ function logWarn(message: string, data?: unknown) {
     console.warn(`[content][WARN] ${message}`, data);
   }
 }
-
-let lastSuccessfulFingerprint = "";
-let lastAttemptedFingerprint = "";
-let syncInFlight = false;
-let syncTimer: number | null = null;
 
 function queryFirst(selectors: string[]): Element | null {
   for (const selector of selectors) {
@@ -108,21 +109,12 @@ function mergeCapture(
     merged.code = incoming.code;
   }
 
-  if (incoming.submissionId) {
-    merged.submissionId = incoming.submissionId;
-  }
-
-  if (incoming.language) {
-    merged.language = incoming.language;
-  }
-
-  if (incoming.accepted !== undefined) {
-    merged.accepted = incoming.accepted;
-  }
-
-  if (incoming.statusText) {
-    merged.statusText = incoming.statusText;
-  }
+  if (incoming.submissionId) merged.submissionId = incoming.submissionId;
+  if (incoming.language) merged.language = incoming.language;
+  if (incoming.accepted !== undefined) merged.accepted = incoming.accepted;
+  if (incoming.statusText) merged.statusText = incoming.statusText;
+  if (incoming.runtime) merged.runtime = incoming.runtime;
+  if (incoming.memory) merged.memory = incoming.memory;
 
   if (incoming.capturedAt > current.capturedAt) {
     merged.capturedAt = incoming.capturedAt;
@@ -144,10 +136,9 @@ function handleBridgeMessage(event: MessageEvent) {
       }
     | undefined;
 
-  if (!data) return;
-  if (data.source !== BRIDGE_SOURCE) return;
-  if (data.type !== BRIDGE_TYPE) return;
-  if (!data.payload) return;
+  if (!data || data.source !== BRIDGE_SOURCE || data.type !== BRIDGE_TYPE || !data.payload) {
+    return;
+  }
 
   latestNetworkCapture = mergeCapture(latestNetworkCapture, {
     ...data.payload,
@@ -202,7 +193,6 @@ function getProblemTitle(): string {
 
 function getProblemNumber(): string {
   const rawTitle = getProblemTitle();
-
   const fromTitle = problemNumberFromTitle(rawTitle);
   if (fromTitle) return fromTitle;
 
@@ -297,10 +287,7 @@ function getLanguageText(): string {
 }
 
 function isAcceptedVisible(): boolean {
-  if (latestNetworkCapture?.accepted === true) {
-    return true;
-  }
-
+  if (latestNetworkCapture?.accepted === true) return true;
   return /\bAccepted\b/.test(document.body.innerText);
 }
 
@@ -341,13 +328,16 @@ function buildPayload(): SubmissionPayload | null {
     followUpText: sections.followUpText,
     problemUrl: window.location.href,
     submittedAt: new Date().toISOString(),
-    accepted: true
+    accepted: true,
+    runtime: latestNetworkCapture?.runtime,
+    memory: latestNetworkCapture?.memory,
+    submissionId: latestNetworkCapture?.submissionId
   };
 }
 
 function buildFingerprint(payload: SubmissionPayload): string {
   return [
-    latestNetworkCapture?.submissionId ?? "",
+    payload.submissionId ?? "",
     payload.problemNumber,
     payload.slug,
     payload.language,
