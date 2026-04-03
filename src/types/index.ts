@@ -39,6 +39,30 @@ export interface SubmissionPayload {
   accepted: boolean;
 }
 
+export interface SyncRecord {
+  id: string;
+  problemNumber: string;
+  slug: string;
+  title: string;
+  difficulty: Difficulty;
+  language: string;
+  submittedAt: string;
+  syncedAt: string;
+  repoPath: string;
+  commitSha?: string;
+  status: "success" | "failed";
+  error?: string;
+}
+
+export interface DashboardStats {
+  totalSolved: number;
+  easyCount: number;
+  mediumCount: number;
+  hardCount: number;
+  lastSyncedAt?: string;
+  lastProblemTitle?: string;
+}
+
 export interface RuntimeResponse<T = unknown> {
   ok: boolean;
   data?: T;
