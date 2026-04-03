@@ -37,7 +37,8 @@ function logWarn(message: string, data?: unknown) {
   }
 }
 
-let lastSentFingerprint = "";
+let lastSuccessfulFingerprint = "";
+let lastAttemptedFingerprint = "";
 let syncInFlight = false;
 let syncTimer: number | null = null;
 
@@ -184,7 +185,7 @@ function buildFingerprint(payload: SubmissionPayload): string {
     payload.slug,
     payload.language,
     payload.code.length,
-    payload.code.slice(0, 30)
+    payload.code.slice(0, 80)
   ].join(":");
 }
 
@@ -211,13 +212,19 @@ async function trySyncAcceptedSubmission(): Promise<void> {
   }
 
   const fingerprint = buildFingerprint(payload);
-  if (fingerprint === lastSentFingerprint) {
-    logDebug("duplicate fingerprint, skipping");
+
+  if (fingerprint === lastSuccessfulFingerprint) {
+    logDebug("already synced successfully, skipping");
+    return;
+  }
+
+  if (fingerprint === lastAttemptedFingerprint) {
+    logDebug("already attempted recently, skipping");
     return;
   }
 
   syncInFlight = true;
-  lastSentFingerprint = fingerprint;
+  lastAttemptedFingerprint = fingerprint;
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -227,11 +234,16 @@ async function trySyncAcceptedSubmission(): Promise<void> {
 
     logInfo("background responded", response);
 
-    if (!response?.ok) {
+    if (response?.ok) {
+      lastSuccessfulFingerprint = fingerprint;
+    } else {
       logWarn("sync failed", response?.error);
+      // allow a future retry for the same payload if the previous attempt failed
+      lastAttemptedFingerprint = "";
     }
   } catch (error) {
     logWarn("runtime unavailable", error);
+    lastAttemptedFingerprint = "";
   } finally {
     syncInFlight = false;
   }
@@ -274,9 +286,14 @@ function init(): void {
     () => {
       window.setTimeout(() => scheduleSync(), 1500);
       window.setTimeout(() => scheduleSync(), 3000);
+      window.setTimeout(() => scheduleSync(), 5000);
     },
     true
   );
+
+  window.addEventListener("focus", () => {
+    scheduleSync(800);
+  });
 }
 
 init();
