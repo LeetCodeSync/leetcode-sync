@@ -5,6 +5,7 @@ import type {
   PendingDeviceAuth,
   RuntimeResponse
 } from "../types";
+import "../styles.css";
 
 type AuthState = {
   connected: boolean;
@@ -204,199 +205,252 @@ export default function App() {
     await chrome.tabs.create({ url: authState.pending.verificationUri });
   }
 
+  const statusLabel = authState.connected
+    ? "Connected"
+    : authState.pending
+      ? "Pending"
+      : "Disconnected";
+
+  const statusClass = authState.connected
+    ? "status-badge status-badge--success"
+    : authState.pending
+      ? "status-badge status-badge--pending"
+      : "status-badge status-badge--neutral";
+
   return (
-    <div className="page">
-      <h1>LeetCode GitHub Sync</h1>
+    <div className="popup-shell">
+      <div className="popup-app">
+        <header className="hero-card">
+          <div className="hero-card__top">
+            <div>
+              <div className="eyebrow">Extension</div>
+              <h1 className="hero-title">LeetCode GitHub Sync</h1>
+              <p className="hero-subtitle">
+                Sync accepted submissions into your GitHub repo with a clean history.
+              </p>
+            </div>
 
-      <div className="card">
-        <div className="row-between">
-          <h2>GitHub</h2>
-          {authState.connected ? (
-            <span className="badge ok">Connected</span>
-          ) : authState.pending ? (
-            <span className="badge warn">Pending</span>
-          ) : (
-            <span className="badge error">Disconnected</span>
-          )}
-        </div>
+            <div className={statusClass}>{statusLabel}</div>
+          </div>
 
-        {authState.pending && !authState.connected ? (
-          <div style={{ marginTop: 10 }}>
-            <p className="muted">Open GitHub and enter this code:</p>
-            <div className="card inner-card">
-              <div className="kpi">{authState.pending.userCode}</div>
-              <div className="muted" style={{ marginTop: 6 }}>
+          <div className="hero-card__actions">
+            {!authState.connected && !authState.pending ? (
+              <button
+                className="btn btn--primary"
+                onClick={() => void connectGitHub()}
+                disabled={loading}
+              >
+                Connect GitHub
+              </button>
+            ) : null}
+
+            {authState.pending && !authState.connected ? (
+              <>
+                <button
+                  className="btn btn--primary"
+                  onClick={() => void openGitHubDevicePage()}
+                >
+                  Open GitHub
+                </button>
+                <button
+                  className="btn btn--secondary"
+                  onClick={() => void refreshState()}
+                >
+                  Refresh status
+                </button>
+                <button
+                  className="btn btn--secondary"
+                  onClick={() => void disconnectGitHub()}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : null}
+
+            {authState.connected ? (
+              <button
+                className="btn btn--danger"
+                onClick={() => void disconnectGitHub()}
+                disabled={loading}
+              >
+                Disconnect
+              </button>
+            ) : null}
+
+            <button
+              className="btn btn--secondary"
+              onClick={() => setShowSettings((current) => !current)}
+            >
+              {showSettings ? "Hide settings" : "Settings"}
+            </button>
+          </div>
+
+          {authState.pending && !authState.connected ? (
+            <div className="device-code-panel">
+              <div className="device-code-panel__label">
+                Open GitHub and enter this code
+              </div>
+              <div className="device-code-panel__code">
+                {authState.pending.userCode}
+              </div>
+              <div className="device-code-panel__url">
                 {authState.pending.verificationUri}
               </div>
             </div>
-          </div>
-        ) : null}
-
-        <div className="row action-row">
-          {!authState.connected && !authState.pending ? (
-            <button onClick={() => void connectGitHub()} disabled={loading}>
-              Connect GitHub
-            </button>
           ) : null}
 
-          {authState.pending && !authState.connected ? (
-            <>
-              <button onClick={() => void openGitHubDevicePage()}>
-                Open GitHub
-              </button>
-              <button className="secondary" onClick={() => void refreshState()}>
-                Refresh status
-              </button>
-              <button className="secondary" onClick={() => void disconnectGitHub()}>
-                Cancel
-              </button>
-            </>
-          ) : null}
+          {message ? <div className="inline-message">{message}</div> : null}
+        </header>
 
-          {authState.connected ? (
-            <button
-              className="danger"
-              onClick={() => void disconnectGitHub()}
-              disabled={loading}
-            >
-              Disconnect
-            </button>
-          ) : null}
-
-          <button
-            className="secondary"
-            onClick={() => setShowSettings((current) => !current)}
-          >
-            {showSettings ? "Hide settings" : "Settings"}
-          </button>
-        </div>
-
-        {message ? <p className="muted top-gap">{message}</p> : null}
-      </div>
-
-      {!showSettings ? (
-        <div className="card compact-card">
-          <div className="row-between">
-            <h2>Progress</h2>
-            <button className="secondary" onClick={() => void loadDashboard()}>
-              Refresh
-            </button>
-          </div>
-
-          <div className="stats-grid">
-            <div className="stat-box">
-              <div className="stat-value">{dashboard.totalSolved}</div>
-              <div className="stat-label">Total</div>
-            </div>
-
-            <div className="stat-box">
-              <div className="stat-value">{dashboard.easyCount}</div>
-              <div className="stat-label">Easy</div>
-            </div>
-
-            <div className="stat-box">
-              <div className="stat-value">{dashboard.mediumCount}</div>
-              <div className="stat-label">Medium</div>
-            </div>
-
-            <div className="stat-box">
-              <div className="stat-value">{dashboard.hardCount}</div>
-              <div className="stat-label">Hard</div>
-            </div>
-          </div>
-
-          <div className="last-sync">
-            <div className="last-sync-title">Last synced</div>
-            <div className="last-sync-problem">
-              {dashboard.lastProblemTitle ?? "No syncs yet"}
-            </div>
-            <div className="muted">
-              {formatRelativeTime(dashboard.lastSyncedAt)}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showSettings ? (
-        <div className="card compact-card">
-          <h2>Settings</h2>
-
-          <div className="form-group">
-            <label htmlFor="clientId">GitHub OAuth App Client ID</label>
-            <input
-              id="clientId"
-              value={settings.githubClientId}
-              onChange={(event) =>
-                updateSetting("githubClientId", event.target.value)
-              }
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="scope">Repository access</label>
-            <select
-              id="scope"
-              value={settings.githubScope}
-              onChange={(event) =>
-                updateSetting(
-                  "githubScope",
-                  event.target.value as ExtensionSettings["githubScope"]
-                )
-              }
-            >
-              <option value="repo">Public and private repositories</option>
-              <option value="public_repo">Public repositories only</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="repositoryUrl">Repository URL</label>
-            <input
-              id="repositoryUrl"
-              value={settings.repositoryUrl}
-              onChange={(event) =>
-                updateSetting("repositoryUrl", event.target.value)
-              }
-            />
-            {!repositoryUrlIsValid ? (
-              <div className="muted" style={{ marginTop: 6 }}>
-                Enter a full GitHub URL like https://github.com/owner/repo
+        {!showSettings ? (
+          <section className="surface-card">
+            <div className="section-head">
+              <div>
+                <div className="section-kicker">Dashboard</div>
+                <h2 className="section-title">Progress</h2>
               </div>
-            ) : null}
-          </div>
 
-          <div className="form-group">
-            <label htmlFor="repoBranch">Branch</label>
-            <input
-              id="repoBranch"
-              value={settings.repoBranch}
-              onChange={(event) => updateSetting("repoBranch", event.target.value)}
-            />
-          </div>
+              <button
+                className="btn btn--secondary btn--small"
+                onClick={() => void loadDashboard()}
+              >
+                Refresh
+              </button>
+            </div>
 
-          <label className="checkbox-row" htmlFor="acceptedOnly">
-            <span>Sync accepted submissions only</span>
-            <input
-              id="acceptedOnly"
-              type="checkbox"
-              checked={settings.autoSyncAcceptedOnly}
-              onChange={(event) =>
-                updateSetting("autoSyncAcceptedOnly", event.target.checked)
-              }
-            />
-          </label>
+            <div className="stats-grid">
+              <div className="stat-tile">
+                <div className="stat-tile__value">{dashboard.totalSolved}</div>
+                <div className="stat-tile__label">Total</div>
+              </div>
 
-          <div className="row top-gap">
-            <button onClick={() => void saveSettings()} disabled={settingsSaving}>
-              Save settings
-            </button>
+              <div className="stat-tile">
+                <div className="stat-tile__value">{dashboard.easyCount}</div>
+                <div className="stat-tile__label">Easy</div>
+              </div>
 
-            {settingsMessage ? (
-              <span className="muted">{settingsMessage}</span>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+              <div className="stat-tile">
+                <div className="stat-tile__value">{dashboard.mediumCount}</div>
+                <div className="stat-tile__label">Medium</div>
+              </div>
+
+              <div className="stat-tile">
+                <div className="stat-tile__value">{dashboard.hardCount}</div>
+                <div className="stat-tile__label">Hard</div>
+              </div>
+            </div>
+
+            <div className="last-sync-card">
+              <div className="last-sync-card__label">Last synced</div>
+              <div className="last-sync-card__title">
+                {dashboard.lastProblemTitle ?? "No syncs yet"}
+              </div>
+              <div className="last-sync-card__time">
+                {formatRelativeTime(dashboard.lastSyncedAt)}
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="surface-card">
+            <div className="section-head">
+              <div>
+                <div className="section-kicker">Configuration</div>
+                <h2 className="section-title">Settings</h2>
+              </div>
+            </div>
+
+            <div className="form-stack">
+              <label className="field">
+                <span className="field__label">GitHub OAuth App Client ID</span>
+                <input
+                  className="field__input"
+                  value={settings.githubClientId}
+                  onChange={(event) =>
+                    updateSetting("githubClientId", event.target.value)
+                  }
+                />
+              </label>
+
+              <label className="field">
+                <span className="field__label">Repository access</span>
+                <select
+                  className="field__input"
+                  value={settings.githubScope}
+                  onChange={(event) =>
+                    updateSetting(
+                      "githubScope",
+                      event.target.value as ExtensionSettings["githubScope"]
+                    )
+                  }
+                >
+                  <option value="repo">Public and private repositories</option>
+                  <option value="public_repo">Public repositories only</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span className="field__label">Repository URL</span>
+                <input
+                  className="field__input"
+                  value={settings.repositoryUrl}
+                  onChange={(event) =>
+                    updateSetting("repositoryUrl", event.target.value)
+                  }
+                />
+                {!repositoryUrlIsValid ? (
+                  <span className="field__hint">
+                    Enter a full GitHub URL like https://github.com/owner/repo
+                  </span>
+                ) : null}
+              </label>
+
+              <label className="field">
+                <span className="field__label">Branch</span>
+                <input
+                  className="field__input"
+                  value={settings.repoBranch}
+                  onChange={(event) =>
+                    updateSetting("repoBranch", event.target.value)
+                  }
+                />
+              </label>
+
+              <label className="toggle-row" htmlFor="acceptedOnly">
+                <div>
+                  <div className="toggle-row__title">Sync accepted submissions only</div>
+                  <div className="toggle-row__subtitle">
+                    Recommended for normal use.
+                  </div>
+                </div>
+                <input
+                  id="acceptedOnly"
+                  type="checkbox"
+                  checked={settings.autoSyncAcceptedOnly}
+                  onChange={(event) =>
+                    updateSetting("autoSyncAcceptedOnly", event.target.checked)
+                  }
+                />
+              </label>
+
+              <div className="settings-footer">
+                <button
+                  className="btn btn--primary"
+                  onClick={() => void saveSettings()}
+                  disabled={settingsSaving}
+                >
+                  Save settings
+                </button>
+
+                {settingsMessage ? (
+                  <div className="inline-message inline-message--soft">
+                    {settingsMessage}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
