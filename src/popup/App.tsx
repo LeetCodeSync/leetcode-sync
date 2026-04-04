@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
-  DashboardStats,
   ExtensionSettings,
   PendingDeviceAuth,
-  RuntimeResponse
+  RuntimeResponse,
+  SyncRecord
 } from "../types";
 import "./styles.css";
 
@@ -11,6 +11,20 @@ type AuthState = {
   connected: boolean;
   pending: PendingDeviceAuth | null;
 };
+
+type WeeklySummary = {
+  total: number;
+  easy: number;
+  medium: number;
+  hard: number;
+  checks: boolean[];
+};
+
+type LatestSubmission = {
+  title: string;
+  difficulty: "Easy" | "Medium" | "Hard" | "Unknown";
+  syncedAt?: string;
+} | null;
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",
@@ -20,12 +34,8 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSyncAcceptedOnly: true
 };
 
-const EMPTY_DASHBOARD: DashboardStats = {
-  totalSolved: 0,
-  easyCount: 0,
-  mediumCount: 0,
-  hardCount: 0
-};
+const ISSUES_URL = "https://github.com/pshynin/leetcode-github-sync/issues";
+const AUTHOR_URL = "https://github.com/pshynin";
 
 function formatRelativeTime(value?: string): string {
   if (!value) return "—";
@@ -61,15 +71,132 @@ function getRepositoryName(url: string): string {
   return `${match[1]}/${match[2]}`;
 }
 
-function getWeekChecks(totalSolved: number): boolean[] {
-  const checks = [false, false, false, false, false, false, false];
-  const count = Math.min(totalSolved, 7);
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
 
-  for (let i = 0; i < count; i += 1) {
-    checks[6 - i] = true;
+function startOfWeekMonday(date: Date): Date {
+  const day = date.getDay(); // 0 Sun, 1 Mon
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const start = new Date(date);
+  start.setDate(date.getDate() + diffToMonday);
+  return startOfLocalDay(start);
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function getSuccessfulRecords(history: SyncRecord[]): SyncRecord[] {
+  return history.filter((record) => record.status === "success");
+}
+
+function getLatestSubmission(history: SyncRecord[]): LatestSubmission {
+  const successful = getSuccessfulRecords(history).sort((a, b) => {
+    return new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime();
+  });
+
+  const latest = successful[0];
+  if (!latest) return null;
+
+  return {
+    title: latest.title,
+    difficulty: latest.difficulty,
+    syncedAt: latest.syncedAt
+  };
+}
+
+function getWeeklySummary(history: SyncRecord[]): WeeklySummary {
+  const now = new Date();
+  const weekStart = startOfWeekMonday(now);
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+
+  const successful = getSuccessfulRecords(history);
+
+  const uniqueProblemsThisWeek = new Map<string, SyncRecord>();
+  const checks = weekDays.map(() => false);
+
+  for (const record of successful) {
+    const date = new Date(record.syncedAt);
+    if (Number.isNaN(date.getTime())) continue;
+
+    if (date < weekStart || date >= addDays(weekStart, 7)) {
+      continue;
+    }
+
+    const key = record.problemNumber || record.slug;
+    const existing = uniqueProblemsThisWeek.get(key);
+
+    if (!existing || new Date(record.syncedAt).getTime() > new Date(existing.syncedAt).getTime()) {
+      uniqueProblemsThisWeek.set(key, record);
+    }
+
+    weekDays.forEach((weekDay, index) => {
+      if (isSameLocalDay(date, weekDay)) {
+        checks[index] = true;
+      }
+    });
   }
 
-  return checks;
+  let easy = 0;
+  let medium = 0;
+  let hard = 0;
+
+  for (const record of uniqueProblemsThisWeek.values()) {
+    if (record.difficulty === "Easy") easy += 1;
+    else if (record.difficulty === "Medium") medium += 1;
+    else if (record.difficulty === "Hard") hard += 1;
+  }
+
+  return {
+    total: uniqueProblemsThisWeek.size,
+    easy,
+    medium,
+    hard,
+    checks
+  };
+}
+
+function GitHubMark() {
+  return (
+    <svg
+      className="repo-link__icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="currentColor"
+    >
+      <path d="M12 2C6.48 2 2 6.58 2 12.22c0 4.5 2.87 8.31 6.84 9.66.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.21-3.37-1.21-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.58 2.35 1.12 2.92.86.09-.67.35-1.12.64-1.38-2.22-.26-4.56-1.15-4.56-5.1 0-1.13.39-2.06 1.03-2.79-.1-.26-.45-1.31.1-2.73 0 0 .85-.28 2.8 1.06A9.45 9.45 0 0 1 12 6.84c.85 0 1.7.12 2.5.35 1.95-1.34 2.8-1.06 2.8-1.06.56 1.42.21 2.47.1 2.73.64.73 1.03 1.66 1.03 2.79 0 3.96-2.35 4.83-4.58 5.08.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.19 10.19 0 0 0 22 12.22C22 6.58 17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg
+      className="repo-link__external"
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 13 13 7" />
+      <path d="M8 6h6v6" />
+      <path d="M12 11v3a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h3" />
+    </svg>
+  );
 }
 
 export default function App() {
@@ -78,7 +205,7 @@ export default function App() {
     pending: null
   });
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
-  const [dashboard, setDashboard] = useState<DashboardStats>(EMPTY_DASHBOARD);
+  const [history, setHistory] = useState<SyncRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -105,20 +232,20 @@ export default function App() {
     }
   }
 
-  async function loadDashboard() {
+  async function loadHistory() {
     const response = (await chrome.runtime.sendMessage({
-      type: "GET_DASHBOARD_STATS"
-    })) as RuntimeResponse<DashboardStats>;
+      type: "GET_SYNC_HISTORY"
+    })) as RuntimeResponse<SyncRecord[]>;
 
     if (response.ok && response.data) {
-      setDashboard(response.data);
+      setHistory(response.data);
     }
   }
 
   useEffect(() => {
     void refreshState();
     void loadSettings();
-    void loadDashboard();
+    void loadHistory();
   }, []);
 
   function updateSetting<K extends keyof ExtensionSettings>(
@@ -143,9 +270,14 @@ export default function App() {
     [settings.repositoryUrl]
   );
 
-  const weekChecks = useMemo(
-    () => getWeekChecks(dashboard.totalSolved),
-    [dashboard.totalSolved]
+  const latestSubmission = useMemo(
+    () => getLatestSubmission(history),
+    [history]
+  );
+
+  const weeklySummary = useMemo(
+    () => getWeeklySummary(history),
+    [history]
   );
 
   const statusLabel = authState.connected
@@ -248,9 +380,22 @@ export default function App() {
     await chrome.tabs.create({ url: authState.pending.verificationUri });
   }
 
+  async function openIssuesPage() {
+    await chrome.tabs.create({ url: ISSUES_URL });
+  }
+
+  async function openRepoPage() {
+    if (!settings.repositoryUrl.trim()) return;
+    await chrome.tabs.create({ url: settings.repositoryUrl.trim() });
+  }
+
+  async function openAuthorPage() {
+    await chrome.tabs.create({ url: AUTHOR_URL });
+  }
+
   return (
     <div className="popup-shell">
-      <div className="dashboard-card">
+      <div className="dashboard-root">
         <div className="dashboard-header">
           <div className="dashboard-title">LeetCode Sync</div>
           <button
@@ -262,113 +407,153 @@ export default function App() {
           </button>
         </div>
 
-        <div className="repo-row">
-          <div>
-            <div className="section-label">Repository</div>
-            <div className="repo-name">{repositoryLabel}</div>
-          </div>
-          <div className={statusClass}>{statusLabel}</div>
-        </div>
-
-        {authState.pending && !authState.connected ? (
-          <div className="device-panel">
-            <div className="device-panel__label">GitHub device code</div>
-            <div className="device-panel__code">{authState.pending.userCode}</div>
-            <div className="device-panel__url">
-              {authState.pending.verificationUri}
-            </div>
-            <div className="device-panel__actions">
+        <section className="dashboard-section dashboard-section--top">
+          <div className="repo-row">
+            <div className="repo-meta">
+              <div className="section-label">Repository</div>
               <button
-                className="btn btn--primary btn--small"
-                onClick={() => void openGitHubDevicePage()}
+                className="repo-link"
+                onClick={() => void openRepoPage()}
+                disabled={!settings.repositoryUrl.trim()}
+                title={settings.repositoryUrl.trim() || "Repository not set"}
               >
-                Open GitHub
-              </button>
-              <button
-                className="btn btn--secondary btn--small"
-                onClick={() => void refreshState()}
-              >
-                Refresh
+                <GitHubMark />
+                <span className="repo-link__text">{repositoryLabel}</span>
+                <ExternalIcon />
               </button>
             </div>
-          </div>
-        ) : null}
 
-        {!authState.connected && !authState.pending ? (
-          <div className="top-actions">
-            <button
-              className="btn btn--primary"
-              onClick={() => void connectGitHub()}
-              disabled={loading}
-            >
-              Connect GitHub
+            <div className={statusClass}>{statusLabel}</div>
+          </div>
+
+          {authState.pending && !authState.connected ? (
+            <div className="device-panel">
+              <div className="device-panel__label">GitHub device code</div>
+              <div className="device-panel__code">{authState.pending.userCode}</div>
+              <div className="device-panel__url">
+                {authState.pending.verificationUri}
+              </div>
+              <div className="device-panel__actions">
+                <button
+                  className="btn btn--primary btn--small"
+                  onClick={() => void openGitHubDevicePage()}
+                >
+                  Open GitHub
+                </button>
+                <button
+                  className="btn btn--secondary btn--small"
+                  onClick={() => void refreshState()}
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {!authState.connected && !authState.pending ? (
+            <div className="top-actions">
+              <button
+                className="btn btn--primary"
+                onClick={() => void connectGitHub()}
+                disabled={loading}
+              >
+                Connect GitHub
+              </button>
+            </div>
+          ) : null}
+
+          {message ? <div className="inline-message">{message}</div> : null}
+        </section>
+
+        <section className="dashboard-section">
+          <div className="section-label">Last submitted</div>
+          <div className="submission-row">
+            <div>
+              <div className="problem-name">
+                {latestSubmission?.title ?? "No submissions yet"}
+              </div>
+              <div className="muted-text">
+                {formatRelativeTime(latestSubmission?.syncedAt)}
+              </div>
+            </div>
+
+            {latestSubmission ? (
+              <div className={`difficulty-pill difficulty-pill--${latestSubmission.difficulty.toLowerCase()}`}>
+                {latestSubmission.difficulty}
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="dashboard-section">
+          <div className="section-label">Weekdays</div>
+          <div className="weekday-row weekday-row--labels">
+            {["M", "T", "W", "T", "F", "S", "S"].map((day) => (
+              <span key={day}>{day}</span>
+            ))}
+          </div>
+          <div className="weekday-row">
+            {weeklySummary.checks.map((checked, index) => (
+              <div
+                key={index}
+                className={checked ? "weekday-check weekday-check--on" : "weekday-check"}
+              >
+                {checked ? "✓" : "×"}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="dashboard-section">
+          <div className="section-label">Weekly totals</div>
+
+          <div className="stats-grid">
+            <div className="stat-box">
+              <div className="stat-box__value">{weeklySummary.total}</div>
+              <div className="stat-box__label">Total</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-box__value">{weeklySummary.easy}</div>
+              <div className="stat-box__label">Easy</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-box__value">{weeklySummary.medium}</div>
+              <div className="stat-box__label">Medium</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-box__value">{weeklySummary.hard}</div>
+              <div className="stat-box__label">Hard</div>
+            </div>
+          </div>
+        </section>
+
+        <footer className="dashboard-footer">
+          <div className="dashboard-footer__row">
+            <span className="dashboard-footer__text">Have feedback?</span>
+            <div className="dashboard-footer__links">
+              <button
+                className="footer-link"
+                onClick={() => void openIssuesPage()}
+              >
+                Report issue
+              </button>
+              <span className="footer-separator">|</span>
+              <button
+                className="footer-link"
+                onClick={() => void openIssuesPage()}
+              >
+                Request feature
+              </button>
+            </div>
+          </div>
+
+          <div className="dashboard-footer__credit">
+            Created with <span className="heart">♥</span> by{" "}
+            <button className="footer-link" onClick={() => void openAuthorPage()}>
+              @pshynin
             </button>
           </div>
-        ) : null}
-
-        {message ? <div className="inline-message">{message}</div> : null}
-
-        <div className="main-panels">
-          <div className="content-card">
-            <div className="section-label">Last submitted</div>
-            <div className="problem-name">
-              {dashboard.lastProblemTitle ?? "No submissions yet"}
-            </div>
-            <div className="muted-text">
-              {formatRelativeTime(dashboard.lastSyncedAt)}
-            </div>
-          </div>
-
-          <div className="content-card">
-            <div className="section-label">Weekdays</div>
-            <div className="weekday-row weekday-row--labels">
-              {["M", "T", "W", "T", "F", "S", "S"].map((day) => (
-                <span key={day}>{day}</span>
-              ))}
-            </div>
-            <div className="weekday-row">
-              {weekChecks.map((checked, index) => (
-                <div
-                  key={index}
-                  className={checked ? "weekday-check weekday-check--on" : "weekday-check"}
-                >
-                  {checked ? "✓" : "×"}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="content-card">
-            <div className="stats-header">
-              <div className="section-label">Weekly totals</div>
-              <button
-                className="btn btn--secondary btn--small"
-                onClick={() => void loadDashboard()}
-              >
-                Refresh
-              </button>
-            </div>
-
-            <div className="stats-grid">
-              <div className="stat-box">
-                <div className="stat-box__value">{dashboard.totalSolved}</div>
-                <div className="stat-box__label">Total</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-box__value">{dashboard.easyCount}</div>
-                <div className="stat-box__label">Easy</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-box__value">{dashboard.mediumCount}</div>
-                <div className="stat-box__label">Medium</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-box__value">{dashboard.hardCount}</div>
-                <div className="stat-box__label">Hard</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </footer>
       </div>
 
       {showSettings ? (
