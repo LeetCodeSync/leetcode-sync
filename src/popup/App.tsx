@@ -5,7 +5,7 @@ import type {
   PendingDeviceAuth,
   RuntimeResponse
 } from "../types";
-import "../styles.css";
+import "./styles.css";
 
 type AuthState = {
   connected: boolean;
@@ -50,6 +50,26 @@ function isValidRepositoryUrl(value: string): boolean {
   return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?(\.git)?$/i.test(
     value.trim()
   );
+}
+
+function getRepositoryName(url: string): string {
+  const match = url
+    .trim()
+    .match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+
+  if (!match) return "Repository not set";
+  return `${match[1]}/${match[2]}`;
+}
+
+function getWeekChecks(totalSolved: number): boolean[] {
+  const checks = [false, false, false, false, false, false, false];
+  const count = Math.min(totalSolved, 7);
+
+  for (let i = 0; i < count; i += 1) {
+    checks[6 - i] = true;
+  }
+
+  return checks;
 }
 
 export default function App() {
@@ -117,6 +137,28 @@ export default function App() {
       isValidRepositoryUrl(settings.repositoryUrl),
     [settings.repositoryUrl]
   );
+
+  const repositoryLabel = useMemo(
+    () => getRepositoryName(settings.repositoryUrl),
+    [settings.repositoryUrl]
+  );
+
+  const weekChecks = useMemo(
+    () => getWeekChecks(dashboard.totalSolved),
+    [dashboard.totalSolved]
+  );
+
+  const statusLabel = authState.connected
+    ? "Connected"
+    : authState.pending
+      ? "Pending"
+      : "Disconnected";
+
+  const statusClass = authState.connected
+    ? "status-badge status-badge--success"
+    : authState.pending
+      ? "status-badge status-badge--pending"
+      : "status-badge status-badge--neutral";
 
   async function saveSettings() {
     setSettingsSaving(true);
@@ -198,6 +240,7 @@ export default function App() {
     await chrome.runtime.sendMessage({ type: "DISCONNECT_GITHUB" });
     await refreshState();
     setLoading(false);
+    setShowSettings(false);
   }
 
   async function openGitHubDevicePage() {
@@ -205,111 +248,99 @@ export default function App() {
     await chrome.tabs.create({ url: authState.pending.verificationUri });
   }
 
-  const statusLabel = authState.connected
-    ? "Connected"
-    : authState.pending
-      ? "Pending"
-      : "Disconnected";
-
-  const statusClass = authState.connected
-    ? "status-badge status-badge--success"
-    : authState.pending
-      ? "status-badge status-badge--pending"
-      : "status-badge status-badge--neutral";
-
   return (
     <div className="popup-shell">
-      <div className="popup-app">
-        <header className="hero-card">
-          <div className="hero-card__top">
-            <div>
-              <div className="eyebrow">Extension</div>
-              <h1 className="hero-title">LeetCode GitHub Sync</h1>
-              <p className="hero-subtitle">
-                Sync accepted submissions into your GitHub repo with a clean history.
-              </p>
-            </div>
+      <div className="dashboard-card">
+        <div className="dashboard-header">
+          <div className="dashboard-title">LeetCode Sync</div>
+          <button
+            className="icon-button"
+            onClick={() => setShowSettings(true)}
+            aria-label="Open settings"
+          >
+            ⚙
+          </button>
+        </div>
 
-            <div className={statusClass}>{statusLabel}</div>
+        <div className="repo-row">
+          <div>
+            <div className="section-label">Repository</div>
+            <div className="repo-name">{repositoryLabel}</div>
           </div>
+          <div className={statusClass}>{statusLabel}</div>
+        </div>
 
-          <div className="hero-card__actions">
-            {!authState.connected && !authState.pending ? (
+        {authState.pending && !authState.connected ? (
+          <div className="device-panel">
+            <div className="device-panel__label">GitHub device code</div>
+            <div className="device-panel__code">{authState.pending.userCode}</div>
+            <div className="device-panel__url">
+              {authState.pending.verificationUri}
+            </div>
+            <div className="device-panel__actions">
               <button
-                className="btn btn--primary"
-                onClick={() => void connectGitHub()}
-                disabled={loading}
+                className="btn btn--primary btn--small"
+                onClick={() => void openGitHubDevicePage()}
               >
-                Connect GitHub
+                Open GitHub
               </button>
-            ) : null}
-
-            {authState.pending && !authState.connected ? (
-              <>
-                <button
-                  className="btn btn--primary"
-                  onClick={() => void openGitHubDevicePage()}
-                >
-                  Open GitHub
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  onClick={() => void refreshState()}
-                >
-                  Refresh status
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  onClick={() => void disconnectGitHub()}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : null}
-
-            {authState.connected ? (
               <button
-                className="btn btn--danger"
-                onClick={() => void disconnectGitHub()}
-                disabled={loading}
+                className="btn btn--secondary btn--small"
+                onClick={() => void refreshState()}
               >
-                Disconnect
+                Refresh
               </button>
-            ) : null}
+            </div>
+          </div>
+        ) : null}
 
+        {!authState.connected && !authState.pending ? (
+          <div className="top-actions">
             <button
-              className="btn btn--secondary"
-              onClick={() => setShowSettings((current) => !current)}
+              className="btn btn--primary"
+              onClick={() => void connectGitHub()}
+              disabled={loading}
             >
-              {showSettings ? "Hide settings" : "Settings"}
+              Connect GitHub
             </button>
           </div>
+        ) : null}
 
-          {authState.pending && !authState.connected ? (
-            <div className="device-code-panel">
-              <div className="device-code-panel__label">
-                Open GitHub and enter this code
-              </div>
-              <div className="device-code-panel__code">
-                {authState.pending.userCode}
-              </div>
-              <div className="device-code-panel__url">
-                {authState.pending.verificationUri}
-              </div>
+        {message ? <div className="inline-message">{message}</div> : null}
+
+        <div className="main-panels">
+          <div className="content-card">
+            <div className="section-label">Last submitted</div>
+            <div className="problem-name">
+              {dashboard.lastProblemTitle ?? "No submissions yet"}
             </div>
-          ) : null}
+            <div className="muted-text">
+              {formatRelativeTime(dashboard.lastSyncedAt)}
+            </div>
+          </div>
 
-          {message ? <div className="inline-message">{message}</div> : null}
-        </header>
+          <div className="content-card">
+            <div className="section-label">Weekdays</div>
+            <div className="weekday-row weekday-row--labels">
+              {["M", "T", "W", "T", "F", "S", "S"].map((day) => (
+                <span key={day}>{day}</span>
+              ))}
+            </div>
+            <div className="weekday-row">
+              {weekChecks.map((checked, index) => (
+                <div
+                  key={index}
+                  className={checked ? "weekday-check weekday-check--on" : "weekday-check"}
+                >
+                  {checked ? "✓" : "×"}
+                </div>
+              ))}
+            </div>
+          </div>
 
-        {!showSettings ? (
-          <section className="surface-card">
-            <div className="section-head">
-              <div>
-                <div className="section-kicker">Dashboard</div>
-                <h2 className="section-title">Progress</h2>
-              </div>
-
+          <div className="content-card">
+            <div className="stats-header">
+              <div className="section-label">Weekly totals</div>
               <button
                 className="btn btn--secondary btn--small"
                 onClick={() => void loadDashboard()}
@@ -319,44 +350,39 @@ export default function App() {
             </div>
 
             <div className="stats-grid">
-              <div className="stat-tile">
-                <div className="stat-tile__value">{dashboard.totalSolved}</div>
-                <div className="stat-tile__label">Total</div>
+              <div className="stat-box">
+                <div className="stat-box__value">{dashboard.totalSolved}</div>
+                <div className="stat-box__label">Total</div>
               </div>
-
-              <div className="stat-tile">
-                <div className="stat-tile__value">{dashboard.easyCount}</div>
-                <div className="stat-tile__label">Easy</div>
+              <div className="stat-box">
+                <div className="stat-box__value">{dashboard.easyCount}</div>
+                <div className="stat-box__label">Easy</div>
               </div>
-
-              <div className="stat-tile">
-                <div className="stat-tile__value">{dashboard.mediumCount}</div>
-                <div className="stat-tile__label">Medium</div>
+              <div className="stat-box">
+                <div className="stat-box__value">{dashboard.mediumCount}</div>
+                <div className="stat-box__label">Medium</div>
               </div>
-
-              <div className="stat-tile">
-                <div className="stat-tile__value">{dashboard.hardCount}</div>
-                <div className="stat-tile__label">Hard</div>
+              <div className="stat-box">
+                <div className="stat-box__value">{dashboard.hardCount}</div>
+                <div className="stat-box__label">Hard</div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
 
-            <div className="last-sync-card">
-              <div className="last-sync-card__label">Last synced</div>
-              <div className="last-sync-card__title">
-                {dashboard.lastProblemTitle ?? "No syncs yet"}
-              </div>
-              <div className="last-sync-card__time">
-                {formatRelativeTime(dashboard.lastSyncedAt)}
-              </div>
-            </div>
-          </section>
-        ) : (
-          <section className="surface-card">
-            <div className="section-head">
-              <div>
-                <div className="section-kicker">Configuration</div>
-                <h2 className="section-title">Settings</h2>
-              </div>
+      {showSettings ? (
+        <div className="modal-backdrop" onClick={() => setShowSettings(false)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">Settings</div>
+              <button
+                className="icon-button"
+                onClick={() => setShowSettings(false)}
+                aria-label="Close settings"
+              >
+                ×
+              </button>
             </div>
 
             <div className="form-stack">
@@ -415,10 +441,12 @@ export default function App() {
                 />
               </label>
 
-              <label className="toggle-row" htmlFor="acceptedOnly">
+              <label className="toggle-card" htmlFor="acceptedOnly">
                 <div>
-                  <div className="toggle-row__title">Sync accepted submissions only</div>
-                  <div className="toggle-row__subtitle">
+                  <div className="toggle-card__title">
+                    Sync accepted submissions only
+                  </div>
+                  <div className="toggle-card__subtitle">
                     Recommended for normal use.
                   </div>
                 </div>
@@ -432,25 +460,35 @@ export default function App() {
                 />
               </label>
 
-              <div className="settings-footer">
+              <div className="modal-actions">
                 <button
                   className="btn btn--primary"
                   onClick={() => void saveSettings()}
                   disabled={settingsSaving}
                 >
-                  Save settings
+                  Save
                 </button>
 
-                {settingsMessage ? (
-                  <div className="inline-message inline-message--soft">
-                    {settingsMessage}
-                  </div>
+                {authState.connected ? (
+                  <button
+                    className="btn btn--danger"
+                    onClick={() => void disconnectGitHub()}
+                    disabled={loading}
+                  >
+                    Disconnect
+                  </button>
                 ) : null}
               </div>
+
+              {settingsMessage ? (
+                <div className="inline-message inline-message--soft">
+                  {settingsMessage}
+                </div>
+              ) : null}
             </div>
-          </section>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
