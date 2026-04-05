@@ -62,13 +62,23 @@ function isValidRepositoryUrl(value: string): boolean {
   );
 }
 
-function getRepositoryName(url: string): string {
+function parseRepository(url: string): { owner: string; repo: string } | null {
   const match = url
     .trim()
     .match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
 
-  if (!match) return "Repository not set";
-  return `${match[1]}/${match[2]}`;
+  if (!match) return null;
+
+  return {
+    owner: match[1],
+    repo: match[2]
+  };
+}
+
+function getRepositoryLabel(url: string): string {
+  const parsed = parseRepository(url);
+  if (!parsed) return "Repository not set";
+  return parsed.repo;
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -76,7 +86,7 @@ function startOfLocalDay(date: Date): Date {
 }
 
 function startOfWeekMonday(date: Date): Date {
-  const day = date.getDay(); // 0 Sun, 1 Mon
+  const day = date.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   const start = new Date(date);
   start.setDate(date.getDate() + diffToMonday);
@@ -180,25 +190,6 @@ function GitHubMark() {
   );
 }
 
-function ExternalIcon() {
-  return (
-    <svg
-      className="repo-link__external"
-      viewBox="0 0 20 20"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M7 13 13 7" />
-      <path d="M8 6h6v6" />
-      <path d="M12 11v3a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h3" />
-    </svg>
-  );
-}
-
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
@@ -266,7 +257,7 @@ export default function App() {
   );
 
   const repositoryLabel = useMemo(
-    () => getRepositoryName(settings.repositoryUrl),
+    () => getRepositoryLabel(settings.repositoryUrl),
     [settings.repositoryUrl]
   );
 
@@ -280,17 +271,11 @@ export default function App() {
     [history]
   );
 
-  const statusLabel = authState.connected
+  const statusText = authState.connected
     ? "Connected"
     : authState.pending
       ? "Pending"
       : "Disconnected";
-
-  const statusClass = authState.connected
-    ? "status-badge status-badge--success"
-    : authState.pending
-      ? "status-badge status-badge--pending"
-      : "status-badge status-badge--neutral";
 
   async function saveSettings() {
     setSettingsSaving(true);
@@ -384,11 +369,6 @@ export default function App() {
     await chrome.tabs.create({ url: ISSUES_URL });
   }
 
-  async function openRepoPage() {
-    if (!settings.repositoryUrl.trim()) return;
-    await chrome.tabs.create({ url: settings.repositoryUrl.trim() });
-  }
-
   async function openAuthorPage() {
     await chrome.tabs.create({ url: AUTHOR_URL });
   }
@@ -399,7 +379,7 @@ export default function App() {
         <div className="dashboard-header">
           <div className="dashboard-title">LeetCode Sync</div>
           <button
-            className="icon-button"
+            className="settings-button"
             onClick={() => setShowSettings(true)}
             aria-label="Open settings"
           >
@@ -408,22 +388,16 @@ export default function App() {
         </div>
 
         <section className="dashboard-section dashboard-section--top">
-          <div className="repo-row">
-            <div className="repo-meta">
-              <div className="section-label">Repository</div>
-              <button
-                className="repo-link"
-                onClick={() => void openRepoPage()}
-                disabled={!settings.repositoryUrl.trim()}
-                title={settings.repositoryUrl.trim() || "Repository not set"}
-              >
-                <GitHubMark />
-                <span className="repo-link__text">{repositoryLabel}</span>
-                <ExternalIcon />
-              </button>
-            </div>
+          <div className="section-label section-label--tiny">Repository</div>
 
-            <div className={statusClass}>{statusLabel}</div>
+          <div className="repo-inline-row">
+            <div className="repo-main">
+              <div className="repo-title-row">
+                <GitHubMark />
+                <div className="repo-name">{repositoryLabel}</div>
+              </div>
+              <div className="repo-status-line">Status: {statusText}</div>
+            </div>
           </div>
 
           {authState.pending && !authState.connected ? (
@@ -468,7 +442,7 @@ export default function App() {
         <section className="dashboard-section">
           <div className="section-label">Last submitted</div>
           <div className="submission-row">
-            <div>
+            <div className="submission-main">
               <div className="problem-name">
                 {latestSubmission?.title ?? "No submissions yet"}
               </div>
@@ -478,7 +452,7 @@ export default function App() {
             </div>
 
             {latestSubmission ? (
-              <div className={`difficulty-pill difficulty-pill--${latestSubmission.difficulty.toLowerCase()}`}>
+              <div className="difficulty-text">
                 {latestSubmission.difficulty}
               </div>
             ) : null}
@@ -508,19 +482,19 @@ export default function App() {
           <div className="section-label">Weekly totals</div>
 
           <div className="stats-grid">
-            <div className="stat-box">
+            <div className="stat-box stat-box--total">
               <div className="stat-box__value">{weeklySummary.total}</div>
               <div className="stat-box__label">Total</div>
             </div>
-            <div className="stat-box">
+            <div className="stat-box stat-box--easy">
               <div className="stat-box__value">{weeklySummary.easy}</div>
               <div className="stat-box__label">Easy</div>
             </div>
-            <div className="stat-box">
+            <div className="stat-box stat-box--medium">
               <div className="stat-box__value">{weeklySummary.medium}</div>
               <div className="stat-box__label">Medium</div>
             </div>
-            <div className="stat-box">
+            <div className="stat-box stat-box--hard">
               <div className="stat-box__value">{weeklySummary.hard}</div>
               <div className="stat-box__label">Hard</div>
             </div>
@@ -548,7 +522,7 @@ export default function App() {
           </div>
 
           <div className="dashboard-footer__credit">
-            Created with <span className="heart">♥</span> by{" "}
+            © 2026 Created with <span className="heart">♥</span> by{" "}
             <button className="footer-link" onClick={() => void openAuthorPage()}>
               @pshynin
             </button>
