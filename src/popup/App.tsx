@@ -26,6 +26,10 @@ type LatestSubmission = {
   syncedAt?: string;
 } | null;
 
+type EditableField = "githubClientId" | "repositoryUrl" | "repoBranch" | null;
+
+const APP_VERSION = "v0.1.0";
+
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",
   githubScope: "repo",
@@ -35,7 +39,6 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
 };
 
 const ISSUES_URL = "https://github.com/pshynin/leetcode-github-sync/issues";
-const AUTHOR_URL = "https://github.com/pshynin";
 
 function formatRelativeTime(value?: string): string {
   if (!value) return "—";
@@ -147,7 +150,10 @@ function getWeeklySummary(history: SyncRecord[]): WeeklySummary {
     const key = record.problemNumber || record.slug;
     const existing = uniqueProblemsThisWeek.get(key);
 
-    if (!existing || new Date(record.syncedAt).getTime() > new Date(existing.syncedAt).getTime()) {
+    if (
+      !existing ||
+      new Date(record.syncedAt).getTime() > new Date(existing.syncedAt).getTime()
+    ) {
       uniqueProblemsThisWeek.set(key, record);
     }
 
@@ -190,6 +196,22 @@ function GitHubMark() {
   );
 }
 
+function startConnectErrorMessage(settings: ExtensionSettings): string | null {
+  if (!settings.githubClientId.trim()) {
+    return "Enter your GitHub OAuth App Client ID in Settings first.";
+  }
+
+  if (!settings.repositoryUrl.trim()) {
+    return "Enter a GitHub repository URL in Settings first.";
+  }
+
+  if (!isValidRepositoryUrl(settings.repositoryUrl)) {
+    return "Enter a valid GitHub repository URL in Settings.";
+  }
+
+  return null;
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
@@ -202,6 +224,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [settingsMessage, setSettingsMessage] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [editingField, setEditingField] = useState<EditableField>(null);
 
   async function refreshState() {
     const response = (await chrome.runtime.sendMessage({
@@ -261,21 +284,13 @@ export default function App() {
     [settings.repositoryUrl]
   );
 
-  const latestSubmission = useMemo(
-    () => getLatestSubmission(history),
-    [history]
-  );
+  const latestSubmission = useMemo(() => getLatestSubmission(history), [history]);
+  const weeklySummary = useMemo(() => getWeeklySummary(history), [history]);
 
-  const weeklySummary = useMemo(
-    () => getWeeklySummary(history),
-    [history]
-  );
-
-  const statusText = authState.connected
-    ? "Connected"
-    : authState.pending
-      ? "Pending"
-      : "Disconnected";
+  const isRepoConnected =
+    authState.connected &&
+    settings.repositoryUrl.trim().length > 0 &&
+    repositoryLabel !== "Repository not set";
 
   async function saveSettings() {
     setSettingsSaving(true);
@@ -306,6 +321,7 @@ export default function App() {
 
     if (response.ok) {
       setSettingsMessage("Settings saved.");
+      setEditingField(null);
     } else {
       setSettingsMessage(response.error ?? "Failed to save settings.");
     }
@@ -317,20 +333,9 @@ export default function App() {
     setLoading(true);
     setMessage("");
 
-    if (!settings.githubClientId.trim()) {
-      setMessage("Enter your GitHub OAuth App Client ID first.");
-      setLoading(false);
-      return;
-    }
-
-    if (!settings.repositoryUrl.trim()) {
-      setMessage("Enter a GitHub repository URL first.");
-      setLoading(false);
-      return;
-    }
-
-    if (!repositoryUrlIsValid) {
-      setMessage("Enter a valid GitHub repository URL.");
+    const validationError = startConnectErrorMessage(settings);
+    if (validationError) {
+      setMessage(validationError);
       setLoading(false);
       return;
     }
@@ -369,103 +374,88 @@ export default function App() {
     await chrome.tabs.create({ url: ISSUES_URL });
   }
 
-  async function openAuthorPage() {
-    await chrome.tabs.create({ url: AUTHOR_URL });
+  async function openRepoPage() {
+    if (!settings.repositoryUrl.trim()) return;
+    await chrome.tabs.create({ url: settings.repositoryUrl.trim() });
+  }
+
+  function renderEditableRow(
+    field: Exclude<EditableField, null>,
+    label: string,
+    value: string,
+    onChange: (value: string) => void,
+    placeholder?: string,
+    hint?: string
+  ) {
+    const isEditing = editingField === field;
+
+    return (
+      <div className="settings-row">
+        <div className="settings-row__header">
+          <div className="settings-row__label">{label}</div>
+          {!isEditing ? (
+            <button
+              className="settings-row__edit"
+              onClick={() => setEditingField(field)}
+            >
+              Edit
+            </button>
+          ) : (
+            <button
+              className="settings-row__edit"
+              onClick={() => setEditingField(null)}
+            >
+              Done
+            </button>
+          )}
+        </div>
+
+        {isEditing ? (
+          <input
+            className="settings-row__input"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            autoFocus
+          />
+        ) : (
+          <div className="settings-row__value">
+            {value || placeholder || "Not set"}
+          </div>
+        )}
+
+        {hint ? <div className="settings-row__hint">{hint}</div> : null}
+      </div>
+    );
   }
 
   return (
     <div className="popup-shell">
       <div className="dashboard-root">
         <div className="dashboard-header">
-          <div className="dashboard-title">LeetCode Sync</div>
+          <div className="dashboard-title-row">
+            <div className="dashboard-title">LeetCode Sync</div>
+            <div className="dashboard-version">{APP_VERSION}</div>
+          </div>
+
           <button
             className="settings-button"
             onClick={() => setShowSettings(true)}
             aria-label="Open settings"
+            title="Settings"
           >
-            ⚙
+            <span className="settings-button__icon">⚙</span>
+            <span className="settings-button__text">Settings</span>
           </button>
         </div>
 
-        <section className="dashboard-section dashboard-section--top">
-          <div className="section-label section-label--tiny">Repository</div>
-
-          <div className="repo-inline-row">
-            <div className="repo-main">
-              <div className="repo-title-row">
-                <GitHubMark />
-                <div className="repo-name">{repositoryLabel}</div>
-              </div>
-              <div className="repo-status-line">Status: {statusText}</div>
-            </div>
-          </div>
-
-          {authState.pending && !authState.connected ? (
-            <div className="device-panel">
-              <div className="device-panel__label">GitHub device code</div>
-              <div className="device-panel__code">{authState.pending.userCode}</div>
-              <div className="device-panel__url">
-                {authState.pending.verificationUri}
-              </div>
-              <div className="device-panel__actions">
-                <button
-                  className="btn btn--primary btn--small"
-                  onClick={() => void openGitHubDevicePage()}
-                >
-                  Open GitHub
-                </button>
-                <button
-                  className="btn btn--secondary btn--small"
-                  onClick={() => void refreshState()}
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {!authState.connected && !authState.pending ? (
-            <div className="top-actions">
-              <button
-                className="btn btn--primary"
-                onClick={() => void connectGitHub()}
-                disabled={loading}
-              >
-                Connect GitHub
-              </button>
-            </div>
-          ) : null}
-
-          {message ? <div className="inline-message">{message}</div> : null}
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-label">Last submitted</div>
-          <div className="submission-row">
-            <div className="submission-main">
-              <div className="problem-name">
-                {latestSubmission?.title ?? "No submissions yet"}
-              </div>
-              <div className="muted-text">
-                {formatRelativeTime(latestSubmission?.syncedAt)}
-              </div>
-            </div>
-
-            {latestSubmission ? (
-              <div className="difficulty-text">
-                {latestSubmission.difficulty}
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-label">Weekdays</div>
+        <section className="hero-section">
           <div className="weekday-row weekday-row--labels">
             {["M", "T", "W", "T", "F", "S", "S"].map((day) => (
               <span key={day}>{day}</span>
             ))}
           </div>
+
           <div className="weekday-row">
             {weeklySummary.checks.map((checked, index) => (
               <div
@@ -476,10 +466,6 @@ export default function App() {
               </div>
             ))}
           </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-label">Weekly totals</div>
 
           <div className="stats-grid">
             <div className="stat-box stat-box--total">
@@ -501,33 +487,95 @@ export default function App() {
           </div>
         </section>
 
-        <footer className="dashboard-footer">
-          <div className="dashboard-footer__row">
-            <span className="dashboard-footer__text">Have feedback?</span>
-            <div className="dashboard-footer__links">
-              <button
-                className="footer-link"
-                onClick={() => void openIssuesPage()}
-              >
-                Report issue
-              </button>
-              <span className="footer-separator">|</span>
-              <button
-                className="footer-link"
-                onClick={() => void openIssuesPage()}
-              >
-                Request feature
-              </button>
+        <section className="dashboard-section">
+          <div className="submission-row">
+            <div className="submission-main">
+              <div className="submission-title-line">
+                <div className="problem-name">
+                  {latestSubmission?.title ?? "No submissions yet"}
+                </div>
+                {latestSubmission ? (
+                  <div className="difficulty-text difficulty-text--inline">
+                    {latestSubmission.difficulty}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="submission-time">
+              {formatRelativeTime(latestSubmission?.syncedAt)}
             </div>
           </div>
+        </section>
 
-          <div className="dashboard-footer__credit">
-            © 2026 Created with <span className="heart">♥</span> by{" "}
-            <button className="footer-link" onClick={() => void openAuthorPage()}>
-              @pshynin
-            </button>
-          </div>
-        </footer>
+        {authState.pending ? (
+          <section className="dashboard-section dashboard-section--footer-meta">
+            <div className="device-panel device-panel--embedded">
+              <div className="device-panel__label">GitHub device code</div>
+              <div className="device-panel__code">{authState.pending.userCode}</div>
+              <div className="device-panel__url">
+                {authState.pending.verificationUri}
+              </div>
+              <div className="device-panel__actions">
+                <button
+                  className="btn btn--primary btn--small"
+                  onClick={() => void openGitHubDevicePage()}
+                >
+                  Open GitHub
+                </button>
+                <button
+                  className="btn btn--secondary btn--small"
+                  onClick={() => void refreshState()}
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {message ? <div className="inline-message">{message}</div> : null}
+          </section>
+        ) : (
+          <>
+            <section className="dashboard-section dashboard-section--footer-meta">
+              <div className="meta-row">
+                {isRepoConnected ? (
+                  <button
+                    className="meta-link"
+                    onClick={() => void openRepoPage()}
+                    title={settings.repositoryUrl.trim()}
+                  >
+                    <GitHubMark />
+                    <span>{repositoryLabel}</span>
+                  </button>
+                ) : (
+                  <button
+                    className="meta-cta"
+                    onClick={() => void connectGitHub()}
+                    disabled={loading}
+                  >
+                    Connect GitHub
+                  </button>
+                )}
+              </div>
+            </section>
+
+            <footer className="dashboard-footer">
+              <div className="dashboard-footer__row">
+                <span className="dashboard-footer__text">Have feedback?</span>
+                <div className="dashboard-footer__links">
+                  <button
+                    className="footer-link"
+                    onClick={() => void openIssuesPage()}
+                  >
+                    Report issue
+                  </button>
+                </div>
+              </div>
+            </footer>
+
+            {message ? <div className="inline-message">{message}</div> : null}
+          </>
+        )}
       </div>
 
       {showSettings ? (
@@ -544,89 +592,93 @@ export default function App() {
               </button>
             </div>
 
-            <div className="form-stack">
-              <label className="field">
-                <span className="field__label">GitHub OAuth App Client ID</span>
-                <input
-                  className="field__input"
-                  value={settings.githubClientId}
-                  onChange={(event) =>
-                    updateSetting("githubClientId", event.target.value)
-                  }
-                />
-              </label>
+            <div className="settings-sheet">
+              {renderEditableRow(
+                "githubClientId",
+                "GitHub OAuth App Client ID",
+                settings.githubClientId,
+                (value) => updateSetting("githubClientId", value),
+                "Not set"
+              )}
 
-              <label className="field">
-                <span className="field__label">Repository access</span>
-                <select
-                  className="field__input"
-                  value={settings.githubScope}
-                  onChange={(event) =>
-                    updateSetting(
-                      "githubScope",
-                      event.target.value as ExtensionSettings["githubScope"]
-                    )
-                  }
-                >
-                  <option value="repo">Public and private repositories</option>
-                  <option value="public_repo">Public repositories only</option>
-                </select>
-              </label>
+              {renderEditableRow(
+                "repositoryUrl",
+                "Repository URL",
+                settings.repositoryUrl,
+                (value) => updateSetting("repositoryUrl", value),
+                "https://github.com/owner/repo",
+                !repositoryUrlIsValid
+                  ? "Enter a full GitHub URL like https://github.com/owner/repo"
+                  : undefined
+              )}
 
-              <label className="field">
-                <span className="field__label">Repository URL</span>
-                <input
-                  className="field__input"
-                  value={settings.repositoryUrl}
-                  onChange={(event) =>
-                    updateSetting("repositoryUrl", event.target.value)
-                  }
-                />
-                {!repositoryUrlIsValid ? (
-                  <span className="field__hint">
-                    Enter a full GitHub URL like https://github.com/owner/repo
-                  </span>
-                ) : null}
-              </label>
+              {renderEditableRow(
+                "repoBranch",
+                "Branch",
+                settings.repoBranch,
+                (value) => updateSetting("repoBranch", value),
+                "main"
+              )}
 
-              <label className="field">
-                <span className="field__label">Branch</span>
-                <input
-                  className="field__input"
-                  value={settings.repoBranch}
-                  onChange={(event) =>
-                    updateSetting("repoBranch", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="toggle-card" htmlFor="acceptedOnly">
-                <div>
-                  <div className="toggle-card__title">
-                    Sync accepted submissions only
+              <div className="settings-row settings-row--toggle">
+                <div className="settings-row__main">
+                  <div className="settings-row__label">Private repository access</div>
+                  <div className="settings-row__hint">
+                    When on, access includes public and private repositories.
                   </div>
-                  <div className="toggle-card__subtitle">
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.githubScope === "repo"}
+                    onChange={(event) =>
+                      updateSetting(
+                        "githubScope",
+                        event.target.checked ? "repo" : "public_repo"
+                      )
+                    }
+                  />
+                  <span className="toggle-switch__track" />
+                </label>
+              </div>
+
+              <div className="settings-row settings-row--toggle">
+                <div className="settings-row__main">
+                  <div className="settings-row__label">Sync accepted submissions only</div>
+                  <div className="settings-row__hint">
                     Recommended for normal use.
                   </div>
                 </div>
-                <input
-                  id="acceptedOnly"
-                  type="checkbox"
-                  checked={settings.autoSyncAcceptedOnly}
-                  onChange={(event) =>
-                    updateSetting("autoSyncAcceptedOnly", event.target.checked)
-                  }
-                />
-              </label>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoSyncAcceptedOnly}
+                    onChange={(event) =>
+                      updateSetting("autoSyncAcceptedOnly", event.target.checked)
+                    }
+                  />
+                  <span className="toggle-switch__track" />
+                </label>
+              </div>
 
-              <div className="modal-actions">
-                <button
-                  className="btn btn--primary"
-                  onClick={() => void saveSettings()}
-                  disabled={settingsSaving}
-                >
-                  Save
-                </button>
+              <div className="modal-actions modal-actions--sheet">
+                <div className="modal-actions__left">
+                  <button
+                    className="btn btn--primary"
+                    onClick={() => void saveSettings()}
+                    disabled={settingsSaving}
+                  >
+                    Save
+                  </button>
+                </div>
+
+                <div className="modal-actions__right">
+                  {settingsMessage ? (
+                    <div className="modal-actions__message">
+                      {settingsMessage}
+                    </div>
+                  ) : null}
+                </div>
 
                 {authState.connected ? (
                   <button
@@ -638,12 +690,6 @@ export default function App() {
                   </button>
                 ) : null}
               </div>
-
-              {settingsMessage ? (
-                <div className="inline-message inline-message--soft">
-                  {settingsMessage}
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
