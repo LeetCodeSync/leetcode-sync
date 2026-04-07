@@ -262,10 +262,22 @@ export default function App() {
     void loadHistory();
   }, []);
 
+  useEffect(() => {
+    if (!showSettings) {
+      setSettingsMessage("");
+      setEditingField(null);
+    }
+  }, [showSettings]);
+
+  function clearSettingsFeedback() {
+    if (settingsMessage) setSettingsMessage("");
+  }
+
   function updateSetting<K extends keyof ExtensionSettings>(
     key: K,
     value: ExtensionSettings[K]
   ) {
+    clearSettingsFeedback();
     setSettings((current) => ({
       ...current,
       [key]: value
@@ -379,6 +391,16 @@ export default function App() {
     await chrome.tabs.create({ url: settings.repositoryUrl.trim() });
   }
 
+  function startEditing(field: Exclude<EditableField, null>) {
+    clearSettingsFeedback();
+    setEditingField(field);
+  }
+
+  function stopEditing() {
+    clearSettingsFeedback();
+    setEditingField(null);
+  }
+
   function renderEditableRow(
     field: Exclude<EditableField, null>,
     label: string,
@@ -396,14 +418,14 @@ export default function App() {
           {!isEditing ? (
             <button
               className="settings-row__edit"
-              onClick={() => setEditingField(field)}
+              onClick={() => startEditing(field)}
             >
               Edit
             </button>
           ) : (
             <button
               className="settings-row__edit"
-              onClick={() => setEditingField(null)}
+              onClick={stopEditing}
             >
               Done
             </button>
@@ -624,7 +646,7 @@ export default function App() {
                 <div className="settings-row__main">
                   <div className="settings-row__label">Private repository access</div>
                   <div className="settings-row__hint">
-                    When on, access includes public and private repositories.
+                    When on, access includes private repositories.
                   </div>
                 </div>
                 <label className="toggle-switch">
@@ -670,9 +692,7 @@ export default function App() {
                   >
                     Save
                   </button>
-                </div>
 
-                <div className="modal-actions__right">
                   {settingsMessage ? (
                     <div className="modal-actions__message">
                       {settingsMessage}
