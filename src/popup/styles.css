@@ -140,7 +140,7 @@ select {
 }
 
 .hero-section {
-  padding: 28px 0 20px;
+  padding: 30px 0 20px;
 }
 
 .weekday-row {
@@ -241,6 +241,7 @@ select {
 .submission-main {
   min-width: 0;
   flex: 1;
+  padding-left: 8px;
 }
 
 .submission-title-line {
@@ -275,11 +276,12 @@ select {
   color: var(--text-soft);
   white-space: nowrap;
   flex-shrink: 0;
+  padding-right: 8px;
 }
 
 .dashboard-section--footer-meta {
-  padding-top: 22px;
-  padding-bottom: 18px;
+  padding-top: 16px;
+  padding-bottom: 16px;
 }
 
 .meta-row {
@@ -289,7 +291,7 @@ select {
   gap: 16px;
 }
 
-.meta-link {
+.meta-account {
   appearance: none;
   border: 0;
   background: transparent;
@@ -297,29 +299,47 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--primary);
   cursor: pointer;
+  color: inherit;
   min-width: 0;
 }
 
-.meta-link:disabled {
-  cursor: default;
-  opacity: 0.75;
-}
-
 .repo-link__icon {
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
   flex-shrink: 0;
   color: var(--text-soft);
+  align-self: center;
 }
 
-.meta-link span {
-  font-size: 15px;
-  font-weight: 500;
-  white-space: nowrap;
+.meta-account__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.meta-account__owner {
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-account__repo {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 500;
+  color: var(--primary);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-cta {
@@ -473,24 +493,6 @@ select {
   color: #c2c7cf;
 }
 
-.dashboard-footer__row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.dashboard-footer__text {
-  font-size: 12px;
-  color: var(--text-soft);
-}
-
-.dashboard-footer__links {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .footer-link {
   appearance: none;
   border: 0;
@@ -510,6 +512,8 @@ select {
   font-size: 11px;
   font-weight: 600;
 }
+
+/* modal */
 
 .modal-backdrop {
   position: fixed;

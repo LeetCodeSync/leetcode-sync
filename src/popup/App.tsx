@@ -84,6 +84,12 @@ function getRepositoryLabel(url: string): string {
   return parsed.repo;
 }
 
+function getRepositoryOwner(url: string): string {
+  const parsed = parseRepository(url);
+  if (!parsed) return "GitHub";
+  return parsed.owner;
+}
+
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -293,6 +299,11 @@ export default function App() {
 
   const repositoryLabel = useMemo(
     () => getRepositoryLabel(settings.repositoryUrl),
+    [settings.repositoryUrl]
+  );
+
+  const repositoryOwner = useMemo(
+    () => getRepositoryOwner(settings.repositoryUrl),
     [settings.repositoryUrl]
   );
 
@@ -562,12 +573,15 @@ export default function App() {
               <div className="meta-row">
                 {isRepoConnected ? (
                   <button
-                    className="meta-link"
+                    className="meta-account"
                     onClick={() => void openRepoPage()}
                     title={settings.repositoryUrl.trim()}
                   >
                     <GitHubMark />
-                    <span>{repositoryLabel}</span>
+                    <div className="meta-account__text">
+                      <div className="meta-account__owner">{repositoryOwner}</div>
+                      <div className="meta-account__repo">{repositoryLabel}</div>
+                    </div>
                   </button>
                 ) : (
                   <button
