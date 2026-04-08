@@ -581,17 +581,17 @@ export default function App() {
               </div>
             </section>
 
-            <footer className="dashboard-footer">
-              <div className="dashboard-footer__row">
-                <span className="dashboard-footer__text">Have feedback?</span>
-                <div className="dashboard-footer__links">
-                  <button
-                    className="footer-link"
-                    onClick={() => void openIssuesPage()}
-                  >
-                    Report issue
-                  </button>
-                </div>
+            <footer className="dashboard-footer dashboard-footer--bar">
+              <div className="dashboard-footer__bar-inner">
+                <span className="dashboard-footer__bar-text">© 2026 pshynin</span>
+                <span className="dashboard-footer__separator">|</span>
+                <span className="dashboard-footer__bar-text">Have feedback?</span>
+                <button
+                  className="footer-link footer-link--bar"
+                  onClick={() => void openIssuesPage()}
+                >
+                  Report issue
+                </button>
               </div>
             </footer>
 

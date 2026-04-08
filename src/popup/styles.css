@@ -24,6 +24,7 @@
   --hard-text: #c5221f;
   --toggle-off: #d9dde3;
   --toggle-on: #2f6fe4;
+  --footer-bar-bg: #f3f4f6;
 }
 
 * {
@@ -437,7 +438,36 @@ select {
 }
 
 .dashboard-footer {
-  padding-top: 24px;
+  padding-top: 18px;
+}
+
+.dashboard-footer--bar {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 1px solid var(--divider);
+  background: var(--footer-bar-bg);
+  border-radius: 0 0 12px 12px;
+}
+
+.dashboard-footer__bar-inner {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  text-align: center;
+  flex-wrap: wrap;
+}
+
+.dashboard-footer__bar-text {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.dashboard-footer__separator {
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 .dashboard-footer__row {
@@ -472,6 +502,13 @@ select {
 .footer-link:hover {
   text-decoration: underline;
 }
+
+.footer-link--bar {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* modal */
 
 .modal-backdrop {
   position: fixed;
