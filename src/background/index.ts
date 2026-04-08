@@ -26,6 +26,13 @@ const recentAttemptTimestamps = new Map<string, number>();
 const ATTEMPT_COOLDOWN_MS = 15_000;
 const SUBMIT_TRIGGER_DELAY_MS = 2_500;
 
+type CompletedRequestDetails = {
+  tabId: number;
+  method?: string;
+  statusCode: number;
+  url: string;
+};
+
 function buildSubmissionKey(submission: SubmissionPayload): string {
   if (submission.submissionId?.trim()) {
     return `submission:${submission.submissionId.trim()}`;
@@ -47,13 +54,6 @@ function cleanupRecentAttempts(now: number) {
     }
   }
 }
-
-type CompletedRequestDetails = {
-  tabId: number;
-  method?: string;
-  statusCode: number;
-  url: string;
-};
 
 function isLeetCodeSubmitRequest(details: CompletedRequestDetails): boolean {
   return (
@@ -126,30 +126,46 @@ async function beginDeviceAuth() {
   const settings = await getSettings();
 
   if (!settings.githubClientId.trim()) {
-    return { ok: false, error: "Enter your GitHub OAuth App Client ID first." };
+    return {
+      ok: false,
+      error: toUserMessage(
+        new AppError(
+          "INVALID_CLIENT_ID",
+          "Enter your GitHub OAuth App Client ID first."
+        )
+      )
+    };
   }
 
-  const device = await startDeviceFlow(
-    settings.githubClientId,
-    settings.githubScope
-  );
+  try {
+    const device = await startDeviceFlow(
+      settings.githubClientId,
+      settings.githubScope
+    );
 
-  const pending = {
-    deviceCode: device.device_code,
-    userCode: device.user_code,
-    verificationUri: device.verification_uri,
-    expiresAt: Date.now() + device.expires_in * 1000,
-    intervalSeconds: device.interval
-  };
+    const pending = {
+      deviceCode: device.device_code,
+      userCode: device.user_code,
+      verificationUri: device.verification_uri,
+      expiresAt: Date.now() + device.expires_in * 1000,
+      intervalSeconds: device.interval
+    };
 
-  await savePendingDeviceAuth(pending);
+    await savePendingDeviceAuth(pending);
 
-  logger.info("background", "device auth started", {
-    verificationUri: pending.verificationUri,
-    userCode: pending.userCode
-  });
+    logger.info("background", "device auth started", {
+      verificationUri: pending.verificationUri,
+      userCode: pending.userCode
+    });
 
-  return { ok: true, data: pending };
+    return { ok: true, data: pending };
+  } catch (error) {
+    logger.error("background", "device auth failed", error);
+    return {
+      ok: false,
+      error: toUserMessage(error, "GitHub authorization setup failed.")
+    };
+  }
 }
 
 async function syncSubmission(submission: SubmissionPayload) {
@@ -169,37 +185,43 @@ async function syncSubmission(submission: SubmissionPayload) {
   });
 
   if (!session?.accessToken) {
+    const error = new AppError(
+      "GITHUB_NOT_CONNECTED",
+      "Connect GitHub before syncing submissions."
+    );
     logger.warn("background", "no GitHub token available");
     return {
       ok: false,
-      error: toUserMessage(
-        new AppError(
-          "GITHUB_NOT_CONNECTED",
-          "Connect GitHub before syncing submissions."
-        )
-      )
+      error: toUserMessage(error)
     };
   }
 
   const parsedRepo = parseGitHubRepoUrl(settings.repositoryUrl);
   if (!parsedRepo) {
-    logger.warn("background", "repository settings are incomplete");
+    const error = new AppError(
+      "INVALID_REPOSITORY_URL",
+      "Enter a valid GitHub repository URL."
+    );
+    logger.warn("background", "repository URL is invalid", {
+      repositoryUrl: settings.repositoryUrl
+    });
     return {
       ok: false,
-      error: toUserMessage(
-        new AppError(
-          "INVALID_REPOSITORY_URL",
-          "Enter a valid GitHub repository URL."
-        )
-      )
+      error: toUserMessage(error)
     };
   }
 
   if (!settings.repoBranch.trim()) {
-    logger.warn("background", "repository settings are invalid");
+    const error = new AppError(
+      "INVALID_BRANCH",
+      "Enter a branch name."
+    );
+    logger.warn("background", "repository branch is invalid", {
+      branch: settings.repoBranch
+    });
     return {
       ok: false,
-      error: "Enter a branch name."
+      error: toUserMessage(error)
     };
   }
 
@@ -214,18 +236,26 @@ async function syncSubmission(submission: SubmissionPayload) {
   cleanupRecentAttempts(now);
 
   if (syncLocks.has(submissionKey)) {
+    const error = new AppError(
+      "SYNC_ALREADY_IN_PROGRESS",
+      "A sync for this submission is already in progress."
+    );
     logger.warn("background", "duplicate submission sync blocked (in flight)", {
       submissionKey
     });
 
     return {
       ok: false,
-      error: "A sync for this submission is already in progress."
+      error: toUserMessage(error)
     };
   }
 
   const lastAttemptAt = recentAttemptTimestamps.get(submissionKey);
   if (lastAttemptAt && now - lastAttemptAt < ATTEMPT_COOLDOWN_MS) {
+    const error = new AppError(
+      "SYNC_COOLDOWN",
+      "This submission was just synced or attempted. Please wait a few seconds."
+    );
     logger.warn("background", "duplicate submission sync blocked (cooldown)", {
       submissionKey,
       ageMs: now - lastAttemptAt
@@ -233,7 +263,7 @@ async function syncSubmission(submission: SubmissionPayload) {
 
     return {
       ok: false,
-      error: "This submission was just synced or attempted. Please wait a few seconds."
+      error: toUserMessage(error)
     };
   }
 
