@@ -6,8 +6,15 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1"
   },
-  "compilerOptions": {
-    "esModuleInterop": true
+  transform: {
+    "^.+\\.ts$": [
+      "ts-jest",
+      {
+        tsconfig: {
+          esModuleInterop: true
+        }
+      }
+    ]
   },
   clearMocks: true,
   restoreMocks: true
