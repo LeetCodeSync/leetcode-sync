@@ -12,7 +12,7 @@ import type {
   ExtensionSettings,
   GitHubAuthSession,
   PendingDeviceAuth
-} from "@/types";
+} from "../types";
 
 type StorageMap = Record<string, unknown>;
 
@@ -45,8 +45,7 @@ describe("src/lib/storage.ts", () => {
     expect(settings).toEqual({
       githubClientId: "",
       githubScope: "repo",
-      repoOwner: "",
-      repoName: "",
+      repositoryUrl: "",
       repoBranch: "main",
       autoSyncAcceptedOnly: true
     });
@@ -55,8 +54,7 @@ describe("src/lib/storage.ts", () => {
   it("getSettings merges stored values over defaults", async () => {
     store.settings = {
       githubClientId: "client-123",
-      repoOwner: "pshynin",
-      repoName: "leetcode-private"
+      repositoryUrl: "https://github.com/pshynin/leetcode-private"
     };
 
     const settings = await getSettings();
@@ -64,8 +62,7 @@ describe("src/lib/storage.ts", () => {
     expect(settings).toEqual({
       githubClientId: "client-123",
       githubScope: "repo",
-      repoOwner: "pshynin",
-      repoName: "leetcode-private",
+      repositoryUrl: "https://github.com/pshynin/leetcode-private",
       repoBranch: "main",
       autoSyncAcceptedOnly: true
     });
@@ -75,8 +72,7 @@ describe("src/lib/storage.ts", () => {
     const settings: ExtensionSettings = {
       githubClientId: "client-123",
       githubScope: "public_repo",
-      repoOwner: "pshynin",
-      repoName: "leetcode-public",
+      repositoryUrl: "https://github.com/pshynin/leetcode-public",
       repoBranch: "main",
       autoSyncAcceptedOnly: false
     };

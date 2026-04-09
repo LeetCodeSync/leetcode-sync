@@ -6,6 +6,9 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1"
   },
+  "compilerOptions": {
+    "esModuleInterop": true
+  },
   clearMocks: true,
   restoreMocks: true
 };
