@@ -1,0 +1,40 @@
+name: Feature Request
+description: Suggest an improvement for LeetCode Sync
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the feature clearly
+      placeholder: Add an option to organize commits by language and problem difficulty
+    validations:
+      required: true
+
+  - type: textarea
+    id: importance
+    attributes:
+      label: Why this is important
+      description: Explain why this feature matters
+      placeholder: This would make repositories easier to browse and maintain
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem it solves
+      description: Describe the current pain point
+      placeholder: Right now all synced files go into one structure, which becomes harder to navigate over time
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What other ways could solve the same problem
+      description: List alternatives or workarounds
+      placeholder: Users can manually reorganize files, but that is repetitive and easy to forget
+    validations:
+      required: true
