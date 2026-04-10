@@ -1,0 +1,170 @@
+name: Release Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Release version (example: 0.1.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Validate release version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python - <<'PY'
+          import os, re, json, sys
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"].strip()
+
+          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+              raise SystemExit(f"Invalid version '{version}'. Use semver like 0.1.1")
+
+          manifest = json.loads(Path("public/manifest.json").read_text())
+          current = manifest["version"]
+
+          def parse(v: str):
+              return tuple(int(x) for x in v.split("."))
+
+          if parse(version) <= parse(current):
+              raise SystemExit(
+                  f"Release version must be greater than current version. "
+                  f"Current: {current}, requested: {version}"
+              )
+
+          print(f"Current version: {current}")
+          print(f"Requested release version: {version}")
+          PY
+
+      - name: Check tag does not already exist
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          git fetch --tags
+          if git rev-parse "v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${RELEASE_VERSION} already exists"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update package.json and package-lock.json
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: npm version --no-git-tag-version "$RELEASE_VERSION"
+
+      - name: Update manifest and popup UI version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"].strip()
+
+          manifest_path = Path("public/manifest.json")
+          manifest = json.loads(manifest_path.read_text())
+          manifest["version"] = version
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+          app_path = Path("src/popup/App.tsx")
+          app = app_path.read_text()
+          app = re.sub(
+              r'const APP_VERSION = "v\d+\.\d+\.\d+";',
+              f'const APP_VERSION = "v{version}";',
+              app,
+          )
+          app_path.write_text(app)
+
+          print(f"Updated manifest + popup to {version}")
+          PY
+
+      - name: Show changed version files
+        run: |
+          echo "package.json version:"
+          node -p "require('./package.json').version"
+          echo "manifest version:"
+          node -e "console.log(require('./public/manifest.json').version)"
+          echo "popup version line:"
+          grep -n 'APP_VERSION' src/popup/App.tsx
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run production build
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          test -f dist/manifest.json
+          echo "dist/manifest.json found"
+          find dist -maxdepth 3 | sed -n '1,80p'
+
+      - name: Create release ZIP
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          cd dist
+          zip -r "../leetcode-github-sync-${RELEASE_VERSION}.zip" .
+          cd ..
+          ls -lh "leetcode-github-sync-${RELEASE_VERSION}.zip"
+
+      - name: Upload release ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leetcode-github-sync-${{ inputs.release_version }}
+          path: leetcode-github-sync-${{ inputs.release_version }}.zip
+          if-no-files-found: error
+
+      - name: Commit version bump to main
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json public/manifest.json src/popup/App.tsx
+          git commit -m "chore: release v${RELEASE_VERSION}"
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          git tag "v${RELEASE_VERSION}"
+          git push origin "v${RELEASE_VERSION}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.release_version }}
+          name: v${{ inputs.release_version }}
+          generate_release_notes: true
+          files: leetcode-github-sync-${{ inputs.release_version }}.zip
