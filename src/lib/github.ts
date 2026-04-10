@@ -187,7 +187,7 @@ function createGitHubRequestError(
     );
   }
 
-  if (url.includes("/git/ref/heads/") && status === 404) {
+  if (url.includes("/git/refs/heads/") && status === 404) {
     return new AppError(
       "BRANCH_NOT_FOUND",
       "Branch not found in the target repository.",
@@ -267,7 +267,7 @@ async function getBranchHead(
   branch: string
 ): Promise<{ commitSha: string; treeSha: string }> {
   const ref = await githubRequest<{ object: { sha: string } }>(
-    `${GITHUB_API_URL}/repos/${owner}/${repo}/git/ref/heads/${branch}`,
+    `${GITHUB_API_URL}/repos/${owner}/${repo}/git/refs/heads/${branch}`,
     token
   );
 
