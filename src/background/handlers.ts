@@ -22,13 +22,21 @@ import {
 } from "../lib/github";
 import { AppError, toUserMessage } from "../lib/errors";
 import { logger } from "../lib/logger";
-import type { RuntimeResponse, SubmissionPayload, SyncRecord, SyncState } from "../types";
+import type {
+  PendingDeviceAuth,
+  RuntimeResponse,
+  SubmissionPayload,
+  SyncRecord,
+  SyncState
+} from "../types";
 
 const syncLocks = new Set<string>();
 const recentAttemptTimestamps = new Map<string, number>();
 
 export const ATTEMPT_COOLDOWN_MS = 15_000;
 export const SUBMIT_TRIGGER_DELAY_MS = 2_500;
+export const TAB_MESSAGE_RETRY_DELAY_MS = 1_000;
+export const MAX_TAB_MESSAGE_ATTEMPTS = 6;
 
 export type CompletedRequestDetails = {
   tabId: number;
@@ -75,30 +83,51 @@ export function isLeetCodeSubmitRequest(
   );
 }
 
+function shouldRetryTabMessageDelivery(errorMessage?: string): boolean {
+  return /Receiving end does not exist/i.test(errorMessage ?? "");
+}
+
+function sendAcceptedSubmissionFetchMessage(tabId: number, attempt: number): void {
+  chrome.tabs.sendMessage(
+    tabId,
+    { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
+    () => {
+      const err = chrome.runtime.lastError;
+
+      if (!err) {
+        logger.info("background", "fetch message delivered", {
+          tabId,
+          attempt
+        });
+        return;
+      }
+
+      logger.debug("background", "tab message delivery failed", {
+        tabId,
+        attempt,
+        message: err.message
+      });
+
+      if (
+        shouldRetryTabMessageDelivery(err.message) &&
+        attempt < MAX_TAB_MESSAGE_ATTEMPTS
+      ) {
+        setTimeout(() => {
+          sendAcceptedSubmissionFetchMessage(tabId, attempt + 1);
+        }, TAB_MESSAGE_RETRY_DELAY_MS);
+      }
+    }
+  );
+}
+
 export function triggerAcceptedSubmissionFetch(tabId: number): void {
   setTimeout(() => {
-    chrome.tabs.sendMessage(
-      tabId,
-      { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
-      async () => {
-        const err = chrome.runtime.lastError;
-        if (!err) {
-          return;
-        }
-
-        logger.debug("background", "tab message ignored", err.message);
-
-        const syncState = await getSyncState();
-        if (syncState.status === "syncing" && !syncState.submissionId) {
-          await clearSyncState();
-        }
-      }
-    );
+    sendAcceptedSubmissionFetchMessage(tabId, 1);
   }, SUBMIT_TRIGGER_DELAY_MS);
 }
 
 export async function checkPendingAuth(): Promise<
-  RuntimeResponse<{ connected: boolean; pending: unknown | null }>
+  RuntimeResponse<{ connected: boolean; pending: PendingDeviceAuth | null }>
 > {
   logger.debug("background", "checkPendingAuth called");
 
@@ -162,7 +191,7 @@ export async function beginDeviceAuth(): Promise<RuntimeResponse> {
       settings.githubScope
     );
 
-    const pending = {
+    const pending: PendingDeviceAuth = {
       deviceCode: device.device_code,
       userCode: device.user_code,
       verificationUri: device.verification_uri,
@@ -391,7 +420,7 @@ export async function disconnectGitHub(): Promise<RuntimeResponse> {
 }
 
 export async function handleRuntimeMessage(
-  message: any,
+  message: { type?: string; payload?: unknown },
   sendResponse: (response: RuntimeResponse) => void
 ): Promise<void> {
   logger.debug("background", "message received", message);
@@ -403,7 +432,7 @@ export async function handleRuntimeMessage(
     }
 
     if (message.type === "SAVE_SETTINGS") {
-      await saveSettings(message.payload);
+      await saveSettings(message.payload as any);
       logger.info("background", "settings saved");
       sendResponse({ ok: true });
       return;
@@ -438,7 +467,7 @@ export async function handleRuntimeMessage(
     }
 
     if (message.type === "SYNC_SUBMISSION") {
-      sendResponse(await syncSubmission(message.payload));
+      sendResponse(await syncSubmission(message.payload as SubmissionPayload));
       return;
     }
 

@@ -2,8 +2,7 @@ import { AppError } from "../lib/errors";
 import type {
   ExtensionSettings,
   GitHubAuthSession,
-  SubmissionPayload,
-  SyncState
+  SubmissionPayload
 } from "../types";
 
 jest.mock("../lib/storage", () => ({
@@ -51,7 +50,9 @@ import {
   handleCompletedRequest,
   handleRuntimeMessage,
   isLeetCodeSubmitRequest,
+  MAX_TAB_MESSAGE_ATTEMPTS,
   SUBMIT_TRIGGER_DELAY_MS,
+  TAB_MESSAGE_RETRY_DELAY_MS,
   syncSubmission,
   triggerAcceptedSubmissionFetch
 } from "./handlers";
@@ -98,6 +99,7 @@ const SAMPLE_SUBMISSION: SubmissionPayload = {
 function createChromeMock() {
   const sendMessage = jest.fn(
     (_tabId: number, _message: unknown, callback?: () => void) => {
+      (global as any).chrome.runtime.lastError = undefined;
       callback?.();
     }
   );
@@ -124,7 +126,7 @@ function createResponder() {
 
 describe("background/handlers", () => {
   beforeEach(() => {
-    __resetHandlerStateForTests(),
+    __resetHandlerStateForTests();
     jest.clearAllMocks();
     jest.useFakeTimers();
 
@@ -216,7 +218,7 @@ describe("background/handlers", () => {
   });
 
   describe("submit-trigger flow", () => {
-    it("triggerAcceptedSubmissionFetch sends tab message after delay", async () => {
+    it("triggerAcceptedSubmissionFetch sends tab message after delay", () => {
       const { sendMessage } = createChromeMock();
 
       triggerAcceptedSubmissionFetch(7);
@@ -230,16 +232,45 @@ describe("background/handlers", () => {
         { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
         expect.any(Function)
       );
+
+      expect(mockedStorage.saveSyncState).not.toHaveBeenCalled();
     });
 
-    it("clears stale placeholder syncing state when tab message delivery fails", async () => {
+    it("retries delivery when receiving end does not exist", () => {
       const { sendMessage } = createChromeMock();
 
-      mockedStorage.getSyncState.mockResolvedValueOnce({
-        status: "syncing"
-      } as SyncState);
+      sendMessage.mockImplementation(
+        (_tabId: number, _message: unknown, callback?: () => void) => {
+          const attempt = sendMessage.mock.calls.length;
 
-      sendMessage.mockImplementationOnce(
+          if (attempt < 3) {
+            (global as any).chrome.runtime.lastError = {
+              message: "Could not establish connection. Receiving end does not exist."
+            };
+          } else {
+            (global as any).chrome.runtime.lastError = undefined;
+          }
+
+          callback?.();
+        }
+      );
+
+      triggerAcceptedSubmissionFetch(9);
+
+      jest.advanceTimersByTime(SUBMIT_TRIGGER_DELAY_MS);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(TAB_MESSAGE_RETRY_DELAY_MS);
+      expect(sendMessage).toHaveBeenCalledTimes(2);
+
+      jest.advanceTimersByTime(TAB_MESSAGE_RETRY_DELAY_MS);
+      expect(sendMessage).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops retrying after the max attempts", () => {
+      const { sendMessage } = createChromeMock();
+
+      sendMessage.mockImplementation(
         (_tabId: number, _message: unknown, callback?: () => void) => {
           (global as any).chrome.runtime.lastError = {
             message: "Could not establish connection. Receiving end does not exist."
@@ -249,41 +280,13 @@ describe("background/handlers", () => {
       );
 
       triggerAcceptedSubmissionFetch(9);
-      jest.advanceTimersByTime(SUBMIT_TRIGGER_DELAY_MS);
 
-      await Promise.resolve();
-      await Promise.resolve();
-
-      expect(mockedStorage.getSyncState).toHaveBeenCalled();
-      expect(mockedStorage.clearSyncState).toHaveBeenCalledTimes(1);
-    });
-
-    it("does not clear active real sync state when delivery fails for another reason", async () => {
-      const { sendMessage } = createChromeMock();
-
-      mockedStorage.getSyncState.mockResolvedValueOnce({
-        status: "syncing",
-        submissionId: "1974823472",
-        title: "Two Sum"
-      } as SyncState);
-
-      sendMessage.mockImplementationOnce(
-        (_tabId: number, _message: unknown, callback?: () => void) => {
-          (global as any).chrome.runtime.lastError = {
-            message: "Could not establish connection. Receiving end does not exist."
-          };
-          callback?.();
-        }
+      jest.advanceTimersByTime(
+        SUBMIT_TRIGGER_DELAY_MS +
+          TAB_MESSAGE_RETRY_DELAY_MS * (MAX_TAB_MESSAGE_ATTEMPTS + 2)
       );
 
-      triggerAcceptedSubmissionFetch(9);
-      jest.advanceTimersByTime(SUBMIT_TRIGGER_DELAY_MS);
-
-      await Promise.resolve();
-      await Promise.resolve();
-
-      expect(mockedStorage.getSyncState).toHaveBeenCalled();
-      expect(mockedStorage.clearSyncState).not.toHaveBeenCalled();
+      expect(sendMessage).toHaveBeenCalledTimes(MAX_TAB_MESSAGE_ATTEMPTS);
     });
 
     it("handleCompletedRequest triggers fetch only for valid submit requests", () => {
@@ -445,6 +448,8 @@ describe("background/handlers", () => {
           reason: "in_progress"
         }
       });
+
+      expect(typeof release).toBe("function");
 
       release();
       await first;
