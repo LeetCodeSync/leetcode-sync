@@ -479,3 +479,8 @@ export function handleCompletedRequest(details: CompletedRequestDetails): void {
 
   triggerAcceptedSubmissionFetch(details.tabId);
 }
+
+export function __resetHandlerStateForTests(): void {
+  syncLocks.clear();
+  recentAttemptTimestamps.clear();
+}
