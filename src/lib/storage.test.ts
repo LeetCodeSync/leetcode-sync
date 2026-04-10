@@ -54,7 +54,7 @@ describe("src/lib/storage.ts", () => {
   it("getSettings merges stored values over defaults", async () => {
     store.settings = {
       githubClientId: "client-123",
-      repositoryUrl: "https://github.com/pshynin/leetcode-private"
+      repositoryUrl: "https://github.com/LeetCodeSync/leetcode-private"
     };
 
     const settings = await getSettings();
@@ -62,7 +62,7 @@ describe("src/lib/storage.ts", () => {
     expect(settings).toEqual({
       githubClientId: "client-123",
       githubScope: "repo",
-      repositoryUrl: "https://github.com/pshynin/leetcode-private",
+      repositoryUrl: "https://github.com/LeetCodeSync/leetcode-private",
       repoBranch: "main",
       autoSyncAcceptedOnly: true
     });
@@ -72,7 +72,7 @@ describe("src/lib/storage.ts", () => {
     const settings: ExtensionSettings = {
       githubClientId: "client-123",
       githubScope: "public_repo",
-      repositoryUrl: "https://github.com/pshynin/leetcode-public",
+      repositoryUrl: "https://github.com/LeetCodeSync/leetcode-public",
       repoBranch: "main",
       autoSyncAcceptedOnly: false
     };

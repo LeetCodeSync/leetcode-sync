@@ -1,6 +1,6 @@
 (() => {
-  const FLAG = "__leetcodeGithubSyncInjected";
-  const BRIDGE_SOURCE = "leetcode-github-sync";
+  const FLAG = "__leetcodeSyncInjected";
+  const BRIDGE_SOURCE = "leetcode-sync";
   const REQUEST_TYPE = "LEETCODE_API_REQUEST";
   const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 
