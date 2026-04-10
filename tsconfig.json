@@ -19,7 +19,9 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["chrome"]
+    "types": ["chrome"],
+    "esModuleInterop": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "node_modules"]
 }

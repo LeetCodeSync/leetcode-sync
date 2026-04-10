@@ -10,9 +10,7 @@ module.exports = {
     "^.+\\.ts$": [
       "ts-jest",
       {
-        tsconfig: {
-          esModuleInterop: true
-        }
+        tsconfig: "tsconfig.test.json"
       }
     ]
   },

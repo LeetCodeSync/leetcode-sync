@@ -1,6 +1,6 @@
 import type { SubmissionPayload } from "../types";
 
-const DEBUG = true;
+const DEBUG = false;
 const INFO = true;
 const BRIDGE_SOURCE = "leetcode-github-sync";
 const REQUEST_TYPE = "LEETCODE_API_REQUEST";
