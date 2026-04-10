@@ -1,4 +1,4 @@
-# LeetCode GitHub Sync
+# LeetCode Sync
 
 > Chrome extension that syncs accepted LeetCode submissions to a GitHub repository.
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-LeetCode GitHub Sync is a Chrome Extension built to automatically save accepted LeetCode submissions into a GitHub repository using a simple per-problem folder structure.
+LeetCode Sync is a Chrome Extension built to automatically save accepted LeetCode submissions into a GitHub repository using a simple per-problem folder structure.
 
 Each accepted submission creates a new Git commit, making the repository a clean and traceable history of solved problems.
 

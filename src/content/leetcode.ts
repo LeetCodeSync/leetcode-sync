@@ -2,7 +2,7 @@ import type { SubmissionPayload } from "../types";
 
 const DEBUG = false;
 const INFO = true;
-const BRIDGE_SOURCE = "leetcode-github-sync";
+const BRIDGE_SOURCE = "leetcode-sync";
 const REQUEST_TYPE = "LEETCODE_API_REQUEST";
 const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 const ATTEMPT_COOLDOWN_MS = 15_000;
@@ -172,7 +172,7 @@ function injectPageScript() {
   const script = document.createElement("script");
   script.src = chrome.runtime.getURL("assets/injected.js");
   script.async = false;
-  script.dataset.source = "leetcode-github-sync";
+  script.dataset.source = "leetcode-sync";
 
   script.onload = () => {
     script.remove();

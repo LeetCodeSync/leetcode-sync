@@ -132,15 +132,15 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           cd dist
-          zip -r "../leetcode-github-sync-${RELEASE_VERSION}.zip" .
+          zip -r "../leetcode-sync-${RELEASE_VERSION}.zip" .
           cd ..
-          ls -lh "leetcode-github-sync-${RELEASE_VERSION}.zip"
+          ls -lh "leetcode-sync-${RELEASE_VERSION}.zip"
 
       - name: Upload release ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: leetcode-github-sync-${{ inputs.release_version }}
-          path: leetcode-github-sync-${{ inputs.release_version }}.zip
+          name: leetcode-sync-${{ inputs.release_version }}
+          path: leetcode-sync-${{ inputs.release_version }}.zip
           if-no-files-found: error
 
       - name: Commit version bump to main
