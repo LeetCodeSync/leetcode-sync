@@ -1,0 +1,53 @@
+name: Bug Report
+description: Report a problem with LeetCode Sync
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: Short summary of the bug
+      placeholder: Accepted submission did not sync to GitHub
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the problem clearly
+      placeholder: What happened and in what context?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What did you expect to happen?
+      placeholder: The accepted solution should be committed to my configured repository
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What actually happened?
+      placeholder: No commit was created and no error was shown
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps
+      placeholder: |
+        1. Open a LeetCode problem
+        2. Submit an accepted solution
+        3. Open the extension popup
+        4. Observe the issue
+    validations:
+      required: true
