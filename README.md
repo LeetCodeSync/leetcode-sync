@@ -1,118 +1,166 @@
 # LeetCode Sync
 
-> Chrome extension that syncs accepted LeetCode submissions to a GitHub repository.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4)
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-34A853)
 
----
+LeetCode Sync is a Chrome extension that automatically syncs accepted LeetCode submissions to a user-configured GitHub repository.
 
-## Overview
+## Screenshot
 
-LeetCode Sync is a Chrome Extension built to automatically save accepted LeetCode submissions into a GitHub repository using a simple per-problem folder structure.
+![LeetCode Sync Dashboard](./docs/images/dashboard.png)
 
-Each accepted submission creates a new Git commit, making the repository a clean and traceable history of solved problems.
+## Why LeetCode Sync
 
----
+Keeping LeetCode solutions in GitHub is useful for long-term tracking, backups, and portfolio visibility, but doing it manually is repetitive and easy to forget.
 
-## Architecture
+LeetCode Sync automates that flow. Once configured, it detects accepted submissions, collects the required solution data, and writes the result to your GitHub repository.
 
-- Chrome Extension, Manifest V3
-- React + TypeScript
-- Vite
-- Background service worker
-- Content script on LeetCode problem pages
-- GitHub OAuth device flow
-- GitHub Git Data API
-- One commit per accepted submission
+## Features
 
----
+- Automatic sync for accepted LeetCode submissions
+- Support for public and private GitHub repositories
+- GitHub Device Flow authentication
+- Configurable repository URL, branch, and sync behavior
+- Clean popup dashboard with recent sync activity and counters
+- Built for a narrow single purpose with minimal required permissions
 
-## Sync Flow
+## How it works
 
-1. User configures GitHub client ID and target repository.
-2. Extension starts GitHub device authorization.
-3. User authorizes on GitHub.
-4. Extension stores the access token locally.
-5. Content script detects an accepted submission on LeetCode.
-6. Background worker extracts problem and solution data.
-7. Background worker commits the files to GitHub.
+1. Configure the extension with your GitHub OAuth App Client ID, repository URL, and branch.
+2. Connect GitHub using the device authorization flow.
+3. Submit a solution on LeetCode.
+4. When the submission is accepted, the extension syncs the solution and related metadata to your GitHub repository.
 
----
+## Requirements
 
-## Repository Layout
+Before setup, make sure you have:
 
-```text
-/1-two-sum/
-  README.md
-  two-sum.py
-```
+- a GitHub account
+- a GitHub repository
+- a GitHub OAuth App with Device Flow enabled
+- the extension installed in Chrome
 
-Example generated files:
+## Setup
 
-- `README.md` contains the problem statement and metadata
-- `two-sum.py` contains the submitted solution
+### 1. Create a GitHub OAuth App
 
----
+In GitHub:
 
-## Security Notes
+- go to `Settings`
+- open `Developer settings`
+- open `OAuth Apps`
+- click `New OAuth App`
 
-- No backend
-- No client secret embedded in the extension
-- Token stored in `chrome.storage.local`
-- Permissions limited to LeetCode and GitHub domains
+Recommended values:
 
----
+- Application name: `LeetCode Sync`
+- Homepage URL: `https://github.com/LeetCodeSync/leetcode-sync`
+- Authorization callback URL: `https://github.com/LeetCodeSync/leetcode-sync`
+- Enable Device Flow: `enabled`
 
-## Limitations
+After creating the app, copy the Client ID.
 
-- Auth is weaker than a backend-assisted GitHub App setup
-- LeetCode parsing is DOM-based and may break if the page changes
-- Full problem statement extraction is heuristic
-- Service worker lifecycle is non-persistent and must tolerate wake/sleep behavior
+### 2. Configure the extension
 
-## Authentication model
+Open the extension settings and enter:
 
-The extension uses GitHub OAuth device flow instead of a GitHub App server-based integration.
+- GitHub OAuth App Client ID
+- Repository URL
+- Branch
+- Private repository access, if needed
+- Sync accepted submissions only, recommended
 
-Why:
-- the extension is fully client-side
-- there is no backend to store app private keys or perform secure token exchange
-- device flow works without embedding a client secret in the extension
+Save the settings.
 
-Tradeoff:
-- this is weaker than a backend-assisted GitHub App architecture
-- access tokens are still stored locally in the extension
+![Settings](./docs/images/settings.png)
 
-This choice is intentional and is currently the best practical authentication model for a no-backend Chrome extension.
+### 3. Connect GitHub
 
----
+- open the extension popup
+- click `Connect GitHub`
+- click `Open GitHub`
+- enter the device code shown by the extension
+- approve access in GitHub
+- return to the extension
 
-## Status
+After authorization, the extension is ready.
 
-Current state:
-- TypeScript extension scaffold
-- Popup, and side panel structure
-- Local storage layer
-- GitHub auth flow scaffold
-- Initial sync pipeline design
+![Connect GitHub](./docs/images/connect-github.png)
 
-Planned next:
-- Harden LeetCode DOM extraction
-- Improve deduplication of accepted submission events
-- Add better sync visibility and error reporting
-- Add tests for pure parsing and helper functions
+## Usage
 
----
+- open a LeetCode problem
+- submit your solution
+- once the submission is accepted, the extension syncs it to GitHub
+- the popup updates recent sync activity and counters
+
+## Permissions
+
+LeetCode Sync requests only the permissions required for its core functionality.
+
+### Chrome permissions
+
+- `storage` to save settings and session state
+- `tabs` to confirm the active page context
+- `webRequest` to observe relevant submission-related request and response activity
+
+### Host permissions
+
+- `https://leetcode.com/*`
+- `https://github.com/*`
+- `https://api.github.com/*`
+
+These are used only for:
+
+- detecting accepted LeetCode submissions
+- supporting GitHub device authorization
+- creating commits and writing files to the configured repository
+
+## Privacy
+
+LeetCode Sync uses data only for its core functionality, including GitHub authentication, repository configuration, and syncing accepted LeetCode submissions.
+
+It does not sell user data, use user data for advertising, or use user data for purposes unrelated to the extension’s single purpose.
+
+See [PRIVACY.md](./PRIVACY.md) for details.
+
+## Support
+
+For bug reports and feature requests, use the GitHub issue forms:
+
+- [Open support page](https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose)
+
+## Roadmap
+
+Potential future improvements:
+
+- richer commit metadata
+- clearer sync history
+- improved error visibility
+- optional repository structure customization
+- broader submission metadata support
 
 ## Development
 
-```bash
-npm install
-npm run build
-```
+This project is built as a Chrome Extension using Manifest V3.
 
-Then load the `dist/` directory as an unpacked extension in Chrome.
+Suggested areas to review in the codebase:
 
----
+- background service worker
+- popup UI
+- content script and injected page bridge
+- GitHub device authorization flow
+- repository write logic
+- local storage and sync preferences
+
+## Limitations
+
+- GitHub authorization depends on valid OAuth App configuration
+- sync behavior depends on LeetCode page structure remaining compatible
+- repository access must be configured correctly
+- only supported LeetCode flows and accepted submissions are synced
 
 ## License
 
-MIT
+This project is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
