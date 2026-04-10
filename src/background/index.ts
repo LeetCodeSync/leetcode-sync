@@ -2,14 +2,17 @@ import {
   appendSyncRecord,
   clearAuthSession,
   clearPendingDeviceAuth,
+  clearSyncState,
   getAuthSession,
   getDashboardStats,
   getPendingDeviceAuth,
   getSettings,
   getSyncHistory,
+  getSyncState,
   saveAuthSession,
   savePendingDeviceAuth,
-  saveSettings
+  saveSettings,
+  saveSyncState
 } from "../lib/storage";
 import {
   commitSubmission,
@@ -19,12 +22,17 @@ import {
 } from "../lib/github";
 import { AppError, toUserMessage } from "../lib/errors";
 import { logger } from "../lib/logger";
-import type { SubmissionPayload, SyncRecord } from "../types";
+import type { SubmissionPayload, SyncRecord, SyncState } from "../types";
 
 const syncLocks = new Set<string>();
 const recentAttemptTimestamps = new Map<string, number>();
 const ATTEMPT_COOLDOWN_MS = 15_000;
 const SUBMIT_TRIGGER_DELAY_MS = 2_500;
+
+
+async function setSyncState(state: SyncState) {
+  await saveSyncState(state);
+}
 
 type CompletedRequestDetails = {
   tabId: number;
@@ -66,6 +74,11 @@ function isLeetCodeSubmitRequest(details: CompletedRequestDetails): boolean {
 }
 
 function triggerAcceptedSubmissionFetch(tabId: number) {
+  void setSyncState({
+    status: "syncing",
+    startedAt: new Date().toISOString()
+  });
+
   setTimeout(() => {
     chrome.tabs.sendMessage(
       tabId,
@@ -236,39 +249,45 @@ async function syncSubmission(submission: SubmissionPayload) {
   cleanupRecentAttempts(now);
 
   if (syncLocks.has(submissionKey)) {
-    const error = new AppError(
-      "SYNC_ALREADY_IN_PROGRESS",
-      "A sync for this submission is already in progress."
-    );
     logger.warn("background", "duplicate submission sync blocked (in flight)", {
       submissionKey
     });
 
     return {
-      ok: false,
-      error: toUserMessage(error)
+      ok: true,
+      data: {
+        skipped: true,
+        reason: "in_progress"
+      }
     };
   }
 
   const lastAttemptAt = recentAttemptTimestamps.get(submissionKey);
   if (lastAttemptAt && now - lastAttemptAt < ATTEMPT_COOLDOWN_MS) {
-    const error = new AppError(
-      "SYNC_COOLDOWN",
-      "This submission was just synced or attempted. Please wait a few seconds."
-    );
     logger.warn("background", "duplicate submission sync blocked (cooldown)", {
       submissionKey,
       ageMs: now - lastAttemptAt
     });
 
     return {
-      ok: false,
-      error: toUserMessage(error)
+      ok: true,
+      data: {
+        skipped: true,
+        reason: "cooldown"
+      }
     };
   }
 
   syncLocks.add(submissionKey);
   recentAttemptTimestamps.set(submissionKey, now);
+
+  await setSyncState({
+    status: "syncing",
+    startedAt: new Date().toISOString(),
+    title: submission.title,
+    difficulty: submission.difficulty,
+    submissionId: submission.submissionId
+  });
 
   try {
     const result = await commitSubmission({
@@ -297,6 +316,12 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
 
     await appendSyncRecord(record);
+    await setSyncState({
+      status: "idle",
+      title: submission.title,
+      difficulty: submission.difficulty,
+      submissionId: submission.submissionId
+    });
     logger.info("background", "commit success", result);
 
     return { ok: true, data: result };
@@ -323,6 +348,14 @@ async function syncSubmission(submission: SubmissionPayload) {
     };
 
     await appendSyncRecord(failedRecord);
+    await setSyncState({
+      status: "error",
+      startedAt: new Date().toISOString(),
+      title: submission.title,
+      difficulty: submission.difficulty,
+      submissionId: submission.submissionId,
+      error: message
+    });
 
     if (error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT") {
       logger.warn("background", "commit failed after retry due to branch race", {
@@ -386,6 +419,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === "DISCONNECT_GITHUB") {
         await clearAuthSession();
         await clearPendingDeviceAuth();
+        await clearSyncState();
         logger.info("background", "GitHub disconnected");
         sendResponse({ ok: true });
         return;
@@ -403,6 +437,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       if (message.type === "GET_SYNC_HISTORY") {
         sendResponse({ ok: true, data: await getSyncHistory() });
+        return;
+      }
+
+      if (message.type === "GET_SYNC_STATE") {
+        sendResponse({ ok: true, data: await getSyncState() });
         return;
       }
 
