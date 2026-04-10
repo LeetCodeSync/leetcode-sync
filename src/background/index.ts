@@ -29,7 +29,6 @@ const recentAttemptTimestamps = new Map<string, number>();
 const ATTEMPT_COOLDOWN_MS = 15_000;
 const SUBMIT_TRIGGER_DELAY_MS = 2_500;
 
-
 async function setSyncState(state: SyncState) {
   await saveSyncState(state);
 }
@@ -74,19 +73,21 @@ function isLeetCodeSubmitRequest(details: CompletedRequestDetails): boolean {
 }
 
 function triggerAcceptedSubmissionFetch(tabId: number) {
-  void setSyncState({
-    status: "syncing",
-    startedAt: new Date().toISOString()
-  });
-
   setTimeout(() => {
     chrome.tabs.sendMessage(
       tabId,
       { type: "FETCH_LATEST_ACCEPTED_SUBMISSION" },
-      () => {
+      async () => {
         const err = chrome.runtime.lastError;
-        if (err) {
-          logger.debug("background", "tab message ignored", err.message);
+        if (!err) {
+          return;
+        }
+
+        logger.debug("background", "tab message ignored", err.message);
+
+        const syncState = await getSyncState();
+        if (syncState.status === "syncing" && !syncState.submissionId) {
+          await clearSyncState();
         }
       }
     );
@@ -225,10 +226,7 @@ async function syncSubmission(submission: SubmissionPayload) {
   }
 
   if (!settings.repoBranch.trim()) {
-    const error = new AppError(
-      "INVALID_BRANCH",
-      "Enter a branch name."
-    );
+    const error = new AppError("INVALID_BRANCH", "Enter a branch name.");
     logger.warn("background", "repository branch is invalid", {
       branch: settings.repoBranch
     });
