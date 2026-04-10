@@ -28,7 +28,8 @@ type LatestSubmission = {
 
 type EditableField = "githubClientId" | "repositoryUrl" | "repoBranch" | null;
 
-const APP_VERSION = "v0.1.0";
+declare const __APP_VERSION__: string;
+const APP_VERSION = __APP_VERSION__;
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",

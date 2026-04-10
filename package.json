@@ -6,6 +6,7 @@
   "description": "Chrome extension to sync LeetCode accepted submissions into a GitHub repository.",
   "scripts": {
     "dev": "vite build --watch",
+    "prebuild": "node scripts/generate-manifest.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",

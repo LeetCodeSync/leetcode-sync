@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Sync",
-  "version": "0.1.0",
+  "version": "__APP_VERSION__",
   "description": "Sync accepted LeetCode submissions into a GitHub repository.",
   "permissions": ["storage", "webRequest", "tabs"],
   "host_permissions": [
