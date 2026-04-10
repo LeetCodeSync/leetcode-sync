@@ -218,6 +218,19 @@ function startConnectErrorMessage(settings: ExtensionSettings): string | null {
   return null;
 }
 
+function getDifficultyClassName(difficulty?: string): string {
+  switch (difficulty) {
+    case "Easy":
+      return "difficulty-text difficulty-text--easy";
+    case "Medium":
+      return "difficulty-text difficulty-text--medium";
+    case "Hard":
+      return "difficulty-text difficulty-text--hard";
+    default:
+      return "difficulty-text difficulty-text--unknown";
+  }
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
@@ -528,7 +541,7 @@ export default function App() {
                   {latestSubmission?.title ?? "No submissions yet"}
                 </div>
                 {latestSubmission ? (
-                  <div className="difficulty-text difficulty-text--inline">
+                  <div className={`${getDifficultyClassName(latestSubmission.difficulty)} difficulty-text--inline`}>
                     {latestSubmission.difficulty}
                   </div>
                 ) : null}
