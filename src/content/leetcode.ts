@@ -1,4 +1,4 @@
-import type { SubmissionPayload } from "../types";
+import type { SubmissionPayload, SyncState } from "../types";
 
 const DEBUG = false;
 const INFO = true;
@@ -6,6 +6,7 @@ const BRIDGE_SOURCE = "leetcode-sync";
 const REQUEST_TYPE = "LEETCODE_API_REQUEST";
 const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 const ATTEMPT_COOLDOWN_MS = 15_000;
+const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
 
 type SubmissionBundle = {
   question: {
@@ -192,6 +193,14 @@ function buildFingerprint(payload: SubmissionPayload): string {
   ].join(":");
 }
 
+async function updateSyncState(state: SyncState) {
+  try {
+    await chrome.runtime.sendMessage({ type: "SET_SYNC_STATE", payload: state });
+  } catch (error) {
+    logDebug("Failed to update sync state", error);
+  }
+}
+
 function bridgeRequest(
   action: "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE",
   payload: { slug: string }
@@ -212,7 +221,7 @@ function bridgeRequest(
     const timeoutId = window.setTimeout(() => {
       pendingRequests.delete(requestId);
       reject(new Error("Timed out waiting for LeetCode API response"));
-    }, 20_000);
+    }, BRIDGE_REQUEST_TIMEOUT_MS);
 
     pendingRequests.set(requestId, {
       resolve,
@@ -235,7 +244,6 @@ function bridgeRequest(
 
 function handleBridgeResponse(event: MessageEvent) {
   if (event.source !== window) return;
-
   const data = event.data as
     | {
         source?: string;
@@ -247,10 +255,9 @@ function handleBridgeResponse(event: MessageEvent) {
       }
     | undefined;
 
-  if (!data) return;
-  if (data.source !== BRIDGE_SOURCE) return;
-  if (data.type !== RESPONSE_TYPE) return;
-  if (!data.requestId) return;
+  if (!data || data.source !== BRIDGE_SOURCE || data.type !== RESPONSE_TYPE || !data.requestId) {
+    return;
+  }
 
   const pending = pendingRequests.get(data.requestId);
   if (!pending) return;
@@ -315,6 +322,14 @@ async function syncBundle(bundle: SubmissionBundle) {
   lastAttemptedFingerprint = fingerprint;
   lastAttemptedAt = now;
 
+  await updateSyncState({
+    status: "syncing",
+    startedAt: new Date().toISOString(),
+    title: payload.title,
+    difficulty: payload.difficulty,
+    submissionId: payload.submissionId
+  });
+
   try {
     const response = await chrome.runtime.sendMessage({
       type: "SYNC_SUBMISSION",
@@ -324,7 +339,9 @@ async function syncBundle(bundle: SubmissionBundle) {
     logInfo("background responded", response);
 
     if (response?.ok) {
-      lastSuccessfulFingerprint = fingerprint;
+      if (!response?.data?.skipped) {
+        lastSuccessfulFingerprint = fingerprint;
+      }
     } else {
       logWarn(response?.error ?? "Sync failed.");
     }
@@ -341,6 +358,12 @@ async function fetchLatestAcceptedSubmission() {
     return;
   }
 
+  const submissionId = getSubmissionIdFromUrl();
+  if (submissionId) {
+    await fetchCurrentSubmissionById();
+    return;
+  }
+
   const slug = getSlugFromUrl();
   if (!slug) {
     logWarn("Could not determine problem slug from URL.");
@@ -348,9 +371,7 @@ async function fetchLatestAcceptedSubmission() {
   }
 
   try {
-    const bundle = await bridgeRequest("GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE", {
-      slug
-    });
+    const bundle = await bridgeRequest("GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE", { slug });
     await syncBundle(bundle);
   } catch (error) {
     logWarn("Failed to fetch latest accepted submission bundle.", error);
@@ -377,7 +398,7 @@ async function fetchCurrentSubmissionById() {
     });
     await syncBundle(bundle);
   } catch (error) {
-    logDebug("Current submission detail was not fetched.", error);
+    logWarn("Failed to fetch submission bundle by id.", error);
   }
 }
 
@@ -399,15 +420,11 @@ function init() {
     path: window.location.pathname
   });
 
-  if (!isSupportedPage()) {
-    logDebug("unsupported page");
-    return;
-  }
+  if (!isSupportedPage()) return;
 
   injectPageScript();
   window.addEventListener("message", handleBridgeResponse);
 
-  // Useful for re-opening a submission detail page directly.
   window.setTimeout(() => {
     void fetchCurrentSubmissionById();
   }, 1200);
