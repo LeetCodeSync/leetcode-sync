@@ -59,8 +59,8 @@ jobs:
           if not re.fullmatch(r"\d+\.\d+\.\d+", version):
               raise SystemExit(f"Invalid version '{version}'. Use semver like 0.1.1")
 
-          manifest = json.loads(Path("public/manifest.json").read_text())
-          current = manifest["version"]
+          package = json.loads(Path("package.json").read_text())
+          current = package["version"]
 
           def parse(v: str):
               return tuple(int(x) for x in v.split("."))
@@ -93,39 +93,12 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: npm version --no-git-tag-version "$RELEASE_VERSION"
 
-      - name: Update manifest and popup UI version
-        env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-        run: |
-          python - <<'PY'
-          import json, os, re
-          from pathlib import Path
-
-          version = os.environ["RELEASE_VERSION"].strip()
-
-          manifest_path = Path("public/manifest.json")
-          manifest = json.loads(manifest_path.read_text())
-          manifest["version"] = version
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-          app_path = Path("src/popup/App.tsx")
-          app = app_path.read_text()
-          app = re.sub(
-              r'const APP_VERSION = "v\d+\.\d+\.\d+";',
-              f'const APP_VERSION = "v{version}";',
-              app,
-          )
-          app_path.write_text(app)
-          PY
-
       - name: Show changed version files
         run: |
           echo "package.json version:"
           node -p "require('./package.json').version"
-          echo "manifest version:"
-          node -e "console.log(require('./public/manifest.json').version)"
-          echo "popup version line:"
-          grep -n 'APP_VERSION' src/popup/App.tsx
+          echo "package-lock.json version:"
+          node -p "require('./package-lock.json').version"
 
       - name: Run unit tests
         run: npm test
@@ -134,9 +107,14 @@ jobs:
         run: npm run build
 
       - name: Verify build output
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           test -f dist/manifest.json
           echo "dist/manifest.json found"
+          echo "dist manifest version:"
+          node -e "console.log(require('./dist/manifest.json').version)"
+          test "$(node -p "require('./dist/manifest.json').version")" = "$RELEASE_VERSION"
           find dist -maxdepth 3 | sed -n '1,80p'
 
       - name: Create release ZIP
@@ -162,7 +140,7 @@ jobs:
           git config user.name "leetcode-sync-release-bot[bot]"
           git config user.email "leetcode-sync-release-bot[bot]@users.noreply.github.com"
 
-          git add package.json package-lock.json public/manifest.json src/popup/App.tsx
+          git add package.json package-lock.json
           git commit -m "chore: release v${RELEASE_VERSION}"
           git push origin HEAD:main
 
