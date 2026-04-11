@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSyncAcceptedOnly: true
 };
 
-const ISSUES_URL = "https://github.com/LeetCodeSync/leetcode-sync/issues";
+const ISSUES_URL = "https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose";
 
 function formatRelativeTime(value?: string): string {
   if (!value) return "—";
@@ -233,7 +233,6 @@ function getDifficultyClassName(difficulty?: string): string {
   }
 }
 
-
 function SyncingDots() {
   return (
     <span className="syncing-dots" aria-label="Syncing">
@@ -395,30 +394,34 @@ export default function App() {
     setSettingsSaving(true);
     setSettingsMessage("");
 
-    if (!settings.repositoryUrl.trim()) {
-      setSettingsMessage("Repository URL is required.");
-      setSettingsSaving(false);
-      return;
-    }
+    const trimmedRepositoryUrl = settings.repositoryUrl.trim();
+    const trimmedBranch = settings.repoBranch.trim();
 
-    if (!repositoryUrlIsValid) {
+    if (trimmedRepositoryUrl && !repositoryUrlIsValid) {
       setSettingsMessage("Enter a valid GitHub repository URL.");
       setSettingsSaving(false);
       return;
     }
 
-    if (!settings.repoBranch.trim()) {
-      setSettingsMessage("Branch is required.");
+    if (trimmedRepositoryUrl && !trimmedBranch) {
+      setSettingsMessage("Branch is required when Repository URL is set.");
       setSettingsSaving(false);
       return;
     }
 
+    const payload: ExtensionSettings = {
+      ...settings,
+      repositoryUrl: trimmedRepositoryUrl,
+      repoBranch: trimmedBranch || "main"
+    };
+
     const response = (await chrome.runtime.sendMessage({
       type: "SAVE_SETTINGS",
-      payload: settings
+      payload
     })) as RuntimeResponse;
 
     if (response.ok) {
+      setSettings(payload);
       setSettingsMessage("Settings saved.");
       setEditingField(null);
     } else {
