@@ -3,13 +3,15 @@ import type {
   ExtensionSettings,
   GitHubAuthSession,
   PendingDeviceAuth,
-  SyncRecord
+  SyncRecord,
+  SyncState
 } from "../types";
 
 const SETTINGS_KEY = "settings";
 const AUTH_KEY = "githubAuthSession";
 const PENDING_AUTH_KEY = "pendingGitHubDeviceAuth";
 const SYNC_HISTORY_KEY = "syncHistory";
+const SYNC_STATE_KEY = "syncState";
 
 const DEFAULT_SETTINGS: ExtensionSettings = {
   githubClientId: "",
@@ -17,6 +19,10 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   repositoryUrl: "",
   repoBranch: "main",
   autoSyncAcceptedOnly: true
+};
+
+const DEFAULT_SYNC_STATE: SyncState = {
+  status: "idle"
 };
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -71,6 +77,22 @@ export async function appendSyncRecord(record: SyncRecord): Promise<void> {
   const current = await getSyncHistory();
   const next = [record, ...current].slice(0, 100);
   await chrome.storage.local.set({ [SYNC_HISTORY_KEY]: next });
+}
+
+export async function getSyncState(): Promise<SyncState> {
+  const result = await chrome.storage.local.get(SYNC_STATE_KEY);
+  return {
+    ...DEFAULT_SYNC_STATE,
+    ...((result[SYNC_STATE_KEY] as Partial<SyncState> | undefined) ?? {})
+  };
+}
+
+export async function saveSyncState(state: SyncState): Promise<void> {
+  await chrome.storage.local.set({ [SYNC_STATE_KEY]: state });
+}
+
+export async function clearSyncState(): Promise<void> {
+  await chrome.storage.local.set({ [SYNC_STATE_KEY]: DEFAULT_SYNC_STATE });
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {

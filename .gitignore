@@ -20,3 +20,5 @@ Thumbs.db
 
 *.zip
 *.crx
+
+/public/manifest.json

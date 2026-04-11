@@ -3,7 +3,8 @@ import type {
   ExtensionSettings,
   PendingDeviceAuth,
   RuntimeResponse,
-  SyncRecord
+  SyncRecord,
+  SyncState
 } from "../types";
 import "./styles.css";
 
@@ -232,6 +233,17 @@ function getDifficultyClassName(difficulty?: string): string {
   }
 }
 
+
+function SyncingDots() {
+  return (
+    <span className="syncing-dots" aria-label="Syncing">
+      <span>.</span>
+      <span>.</span>
+      <span>.</span>
+    </span>
+  );
+}
+
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>({
     connected: false,
@@ -239,6 +251,7 @@ export default function App() {
   });
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [history, setHistory] = useState<SyncRecord[]>([]);
+  const [syncState, setSyncState] = useState<SyncState>({ status: "idle" });
   const [loading, setLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -276,10 +289,45 @@ export default function App() {
     }
   }
 
+  async function loadSyncState() {
+    const response = (await chrome.runtime.sendMessage({
+      type: "GET_SYNC_STATE"
+    })) as RuntimeResponse<SyncState>;
+
+    if (response.ok && response.data) {
+      setSyncState(response.data);
+    }
+  }
+
   useEffect(() => {
     void refreshState();
     void loadSettings();
     void loadHistory();
+    void loadSyncState();
+
+    const handleStorageChange: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (
+      changes,
+      areaName
+    ) => {
+      if (areaName !== "local") return;
+
+      if (changes.syncHistory) {
+        void loadHistory();
+      }
+
+      if (changes.syncState) {
+        void loadSyncState();
+      }
+
+      if (changes.settings) {
+        void loadSettings();
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -323,6 +371,20 @@ export default function App() {
 
   const latestSubmission = useMemo(() => getLatestSubmission(history), [history]);
   const weeklySummary = useMemo(() => getWeeklySummary(history), [history]);
+
+  const displayedProblemTitle =
+    syncState.status === "syncing" && syncState.title
+      ? syncState.title
+      : syncState.status === "error" && syncState.title
+        ? syncState.title
+        : latestSubmission?.title ?? "No submissions yet";
+
+  const displayedDifficulty =
+    syncState.status === "syncing" && syncState.difficulty
+      ? syncState.difficulty
+      : syncState.status === "error" && syncState.difficulty
+        ? syncState.difficulty
+        : latestSubmission?.difficulty;
 
   const isRepoConnected =
     authState.connected &&
@@ -538,19 +600,34 @@ export default function App() {
           <div className="submission-row">
             <div className="submission-main">
               <div className="submission-title-line">
-                <div className="problem-name">
-                  {latestSubmission?.title ?? "No submissions yet"}
-                </div>
-                {latestSubmission ? (
-                  <div className={`${getDifficultyClassName(latestSubmission.difficulty)} difficulty-text--inline`}>
-                    {latestSubmission.difficulty}
+                <div className="problem-name">{displayedProblemTitle}</div>
+                {displayedDifficulty ? (
+                  <div className={`${getDifficultyClassName(displayedDifficulty)} difficulty-text--inline`}>
+                    {displayedDifficulty}
                   </div>
                 ) : null}
               </div>
             </div>
 
-            <div className="submission-time">
-              {formatRelativeTime(latestSubmission?.syncedAt)}
+            <div
+              className={`submission-time ${
+                syncState.status === "syncing"
+                  ? "submission-time--syncing"
+                  : syncState.status === "error"
+                    ? "submission-time--error"
+                    : ""
+              }`.trim()}
+            >
+              {syncState.status === "syncing" ? (
+                <>
+                  <span>Syncing</span>
+                  <SyncingDots />
+                </>
+              ) : syncState.status === "error" ? (
+                "Sync failed"
+              ) : (
+                formatRelativeTime(latestSubmission?.syncedAt)
+              )}
             </div>
           </div>
         </section>

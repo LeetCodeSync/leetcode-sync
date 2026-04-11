@@ -31,7 +31,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/problems/*"],
+      "matches": ["https://leetcode.com/*"],
       "js": ["assets/content.js"],
       "run_at": "document_start"
     }

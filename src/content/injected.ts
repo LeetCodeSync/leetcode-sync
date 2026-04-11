@@ -1,20 +1,19 @@
 (() => {
-  const FLAG = "__leetcodeSyncInjected";
   const BRIDGE_SOURCE = "leetcode-sync";
   const REQUEST_TYPE = "LEETCODE_API_REQUEST";
   const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 
   type BridgeRequest =
     | {
-        source: typeof BRIDGE_SOURCE;
-        type: typeof REQUEST_TYPE;
+        source: string;
+        type: string;
         requestId: string;
         action: "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE";
         payload: { slug: string };
       }
     | {
-        source: typeof BRIDGE_SOURCE;
-        type: typeof REQUEST_TYPE;
+        source: string;
+        type: string;
         requestId: string;
         action: "GET_SUBMISSION_BUNDLE_BY_ID";
         payload: { slug: string; submissionId: string };
@@ -23,38 +22,42 @@
   type SubmissionBundle = {
     question: {
       questionFrontendId: string;
-      title: string;
       titleSlug: string;
-      content: string;
+      title: string;
       difficulty: string;
+      content: string;
     };
     submission: {
       id: string;
       code: string;
-      language?: string;
-      runtime?: string;
-      memory?: string;
-      runtimePercentile?: number;
-      memoryPercentile?: number;
+      language?: string | null;
+      runtime?: string | null;
+      memory?: string | null;
+      runtimePercentile?: number | null;
+      memoryPercentile?: number | null;
       timestamp?: string;
       statusDisplay?: string;
       accepted: boolean;
     };
   };
 
-  const globalWindow = window as Window & {
-    [FLAG]?: boolean;
-  };
+  const questionCache = new Map<string, SubmissionBundle["question"]>();
 
-  if (globalWindow[FLAG]) {
-    return;
+  function normalizeCode(value: string): string {
+    return value
+      .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .trimEnd();
   }
 
-  globalWindow[FLAG] = true;
-
   function getCsrfToken(): string {
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match?.[1] ?? "";
+    return (
+      document.cookie
+        .split("; ")
+        .find((part) => part.startsWith("csrftoken="))
+        ?.split("=")[1] ?? ""
+    );
   }
 
   async function graphqlRequest<T>(
@@ -62,14 +65,12 @@
     query: string,
     variables: Record<string, unknown>
   ): Promise<T> {
-    const response = await fetch("/graphql/", {
+    const response = await fetch("https://leetcode.com/graphql/", {
       method: "POST",
-      credentials: "same-origin",
+      credentials: "include",
       headers: {
-        Accept: "application/json",
         "Content-Type": "application/json",
-        "x-csrftoken": getCsrfToken(),
-        "x-requested-with": "XMLHttpRequest"
+        "x-csrftoken": getCsrfToken()
       },
       body: JSON.stringify({
         operationName,
@@ -101,6 +102,9 @@
   }
 
   async function fetchQuestion(slug: string): Promise<SubmissionBundle["question"]> {
+    const cached = questionCache.get(slug);
+    if (cached) return cached;
+
     const data = await graphqlRequest<{
       question: {
         questionFrontendId: string;
@@ -129,6 +133,7 @@
       throw new Error("Question metadata not found");
     }
 
+    questionCache.set(slug, data.question);
     return data.question;
   }
 
@@ -141,8 +146,6 @@
         submissions: Array<{
           id: string;
           timestamp?: string;
-          statusDisplay?: string;
-          lang?: string;
         }>;
       };
     }>(
@@ -168,19 +171,7 @@
             hasNext
             submissions {
               id
-              title
-              titleSlug
-              status
-              statusDisplay
-              lang
-              langName
-              runtime
               timestamp
-              url
-              isPending
-              memory
-              hasNotes
-              notes
             }
           }
         }
@@ -195,9 +186,7 @@
     );
 
     const latest = data.questionSubmissionList?.submissions?.[0];
-    if (!latest?.id) {
-      return null;
-    }
+    if (!latest?.id) return null;
 
     return {
       id: String(latest.id),
@@ -251,13 +240,13 @@
     );
 
     const detail = data.submissionDetails;
-    if (!detail?.code?.trim()) {
-      throw new Error("Submission detail code not found");
+    if (!detail) {
+      throw new Error("Submission detail not found");
     }
 
     return {
       id: submissionId,
-      code: detail.code,
+      code: detail.code ?? "",
       language: detail.lang?.verboseName || detail.lang?.name,
       runtime: detail.runtimeDisplay || detail.runtime,
       memory: detail.memoryDisplay || detail.memory,
@@ -274,29 +263,58 @@
 
     const numeric = Number(timestamp);
     const millis =
-      Number.isFinite(numeric) && numeric > 0
-        ? numeric * 1000
-        : Date.parse(timestamp);
+      Number.isFinite(numeric) && numeric > 0 ? numeric * 1000 : Date.parse(timestamp);
 
-    if (!Number.isFinite(millis)) {
-      return true;
+    if (!Number.isFinite(millis)) return true;
+    return Date.now() - millis <= 10 * 60 * 1000;
+  }
+
+  async function sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitForAcceptedSubmissionDetail(
+    submissionId: string
+  ): Promise<SubmissionBundle["submission"]> {
+    const delays = [700, 1200, 1800, 2500, 3000, 3500, 4000, 4000];
+    let lastAcceptedWithCode: SubmissionBundle["submission"] | null = null;
+
+    for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+      const submission = await fetchSubmissionDetail(submissionId);
+      const normalizedCode = normalizeCode(submission.code);
+
+      if (submission.accepted && normalizedCode) {
+        lastAcceptedWithCode = {
+          ...submission,
+          code: normalizedCode
+        };
+        return lastAcceptedWithCode;
+      }
+
+      if (attempt < delays.length) {
+        await sleep(delays[attempt]);
+      }
     }
 
-    return Date.now() - millis <= 5 * 60 * 1000;
+    if (lastAcceptedWithCode) {
+      return lastAcceptedWithCode;
+    }
+
+    throw new Error("Submission detail not ready before timeout");
   }
 
   async function getLatestAcceptedSubmissionBundle(
     slug: string
   ): Promise<SubmissionBundle> {
-    const maxAttempts = 6;
+    const summaryDelays = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000];
 
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (let attempt = 0; attempt <= summaryDelays.length; attempt += 1) {
       const summary = await fetchLatestAcceptedSubmissionSummary(slug);
 
       if (summary?.id && isFreshAcceptedSubmission(summary.timestamp)) {
         const [question, submission] = await Promise.all([
           fetchQuestion(slug),
-          fetchSubmissionDetail(summary.id)
+          waitForAcceptedSubmissionDetail(summary.id)
         ]);
 
         return {
@@ -305,8 +323,9 @@
         };
       }
 
-      const delay = Math.min(1000 * 2 ** attempt, 4000);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (attempt < summaryDelays.length) {
+        await sleep(summaryDelays[attempt]);
+      }
     }
 
     throw new Error("No fresh accepted submission found");
@@ -318,7 +337,7 @@
   ): Promise<SubmissionBundle> {
     const [question, submission] = await Promise.all([
       fetchQuestion(slug),
-      fetchSubmissionDetail(submissionId)
+      waitForAcceptedSubmissionDetail(submissionId)
     ]);
 
     return {

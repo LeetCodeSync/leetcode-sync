@@ -1,4 +1,4 @@
-import type { SubmissionPayload } from "../types";
+import type { SubmissionPayload, SyncState } from "../types";
 
 const DEBUG = false;
 const INFO = true;
@@ -6,6 +6,9 @@ const BRIDGE_SOURCE = "leetcode-sync";
 const REQUEST_TYPE = "LEETCODE_API_REQUEST";
 const RESPONSE_TYPE = "LEETCODE_API_RESPONSE";
 const ATTEMPT_COOLDOWN_MS = 15_000;
+const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
+const INITIAL_SYNC_DELAY_MS = 1200;
+const ROUTE_SYNC_DELAY_MS = 900;
 
 type SubmissionBundle = {
   question: {
@@ -41,6 +44,9 @@ let lastAttemptedFingerprint = "";
 let lastAttemptedAt = 0;
 let syncInFlight = false;
 let requestCounter = 0;
+let autoSyncTimerId: number | null = null;
+let lastObservedUrl = window.location.href;
+let lastObservedSubmissionId: string | null = null;
 const pendingRequests = new Map<string, PendingBridgeRequest>();
 
 function logDebug(message: string, data?: unknown) {
@@ -165,6 +171,10 @@ function isSupportedPage(): boolean {
   return window.location.pathname.includes("/problems/");
 }
 
+function isSubmissionPage(): boolean {
+  return /^\/problems\/[^/]+\/submissions\/\d+\/?$/.test(window.location.pathname);
+}
+
 function injectPageScript() {
   if (pageScriptInjected) return;
   pageScriptInjected = true;
@@ -192,6 +202,14 @@ function buildFingerprint(payload: SubmissionPayload): string {
   ].join(":");
 }
 
+async function updateSyncState(state: SyncState) {
+  try {
+    await chrome.runtime.sendMessage({ type: "SET_SYNC_STATE", payload: state });
+  } catch (error) {
+    logDebug("Failed to update sync state", error);
+  }
+}
+
 function bridgeRequest(
   action: "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE",
   payload: { slug: string }
@@ -212,7 +230,7 @@ function bridgeRequest(
     const timeoutId = window.setTimeout(() => {
       pendingRequests.delete(requestId);
       reject(new Error("Timed out waiting for LeetCode API response"));
-    }, 20_000);
+    }, BRIDGE_REQUEST_TIMEOUT_MS);
 
     pendingRequests.set(requestId, {
       resolve,
@@ -247,10 +265,14 @@ function handleBridgeResponse(event: MessageEvent) {
       }
     | undefined;
 
-  if (!data) return;
-  if (data.source !== BRIDGE_SOURCE) return;
-  if (data.type !== RESPONSE_TYPE) return;
-  if (!data.requestId) return;
+  if (
+    !data ||
+    data.source !== BRIDGE_SOURCE ||
+    data.type !== RESPONSE_TYPE ||
+    !data.requestId
+  ) {
+    return;
+  }
 
   const pending = pendingRequests.get(data.requestId);
   if (!pending) return;
@@ -263,6 +285,24 @@ function handleBridgeResponse(event: MessageEvent) {
   } else {
     pending.reject(new Error(data.error ?? "LeetCode bridge request failed"));
   }
+}
+
+function toSubmittedAt(value?: string): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return new Date(numeric * 1000).toISOString();
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+
+  return new Date().toISOString();
 }
 
 function toPayload(bundle: SubmissionBundle): SubmissionPayload {
@@ -280,7 +320,7 @@ function toPayload(bundle: SubmissionBundle): SubmissionPayload {
     constraintsText: description.constraintsText,
     followUpText: description.followUpText,
     problemUrl: `https://leetcode.com/problems/${bundle.question.titleSlug}/`,
-    submittedAt: new Date().toISOString(),
+    submittedAt: toSubmittedAt(bundle.submission.timestamp),
     accepted: true,
     submissionId: bundle.submission.id,
     runtime: bundle.submission.runtime,
@@ -288,6 +328,36 @@ function toPayload(bundle: SubmissionBundle): SubmissionPayload {
     runtimePercentile: bundle.submission.runtimePercentile,
     memoryPercentile: bundle.submission.memoryPercentile
   };
+}
+
+function isExpectedNoAcceptedSubmissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message ?? "";
+
+  return (
+    /No fresh accepted submission found/i.test(message) ||
+    /Submission detail not ready before timeout/i.test(message) ||
+    /Submission detail never became stable/i.test(message)
+  );
+}
+
+function isExpectedRuntimeInvalidationError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Extension context invalidated/i.test(error.message ?? "")
+  );
+}
+
+function logSubmissionFetchIssue(message: string, error: unknown) {
+  if (isExpectedNoAcceptedSubmissionError(error)) {
+    logDebug(message, error);
+    return;
+  }
+
+  logWarn(message, error);
 }
 
 async function syncBundle(bundle: SubmissionBundle) {
@@ -315,6 +385,14 @@ async function syncBundle(bundle: SubmissionBundle) {
   lastAttemptedFingerprint = fingerprint;
   lastAttemptedAt = now;
 
+  await updateSyncState({
+    status: "syncing",
+    startedAt: new Date().toISOString(),
+    title: payload.title,
+    difficulty: payload.difficulty,
+    submissionId: payload.submissionId
+  });
+
   try {
     const response = await chrome.runtime.sendMessage({
       type: "SYNC_SUBMISSION",
@@ -324,12 +402,20 @@ async function syncBundle(bundle: SubmissionBundle) {
     logInfo("background responded", response);
 
     if (response?.ok) {
-      lastSuccessfulFingerprint = fingerprint;
-    } else {
-      logWarn(response?.error ?? "Sync failed.");
+      if (!response?.data?.skipped) {
+        lastSuccessfulFingerprint = fingerprint;
+        lastObservedSubmissionId = payload.submissionId ?? null;
+      }
+      return;
     }
+
+    logWarn(response?.error ?? "Sync failed.");
   } catch (error) {
-    logWarn("Runtime unavailable", error);
+    if (isExpectedRuntimeInvalidationError(error)) {
+      logDebug("Runtime unavailable after extension reload", error);
+    } else {
+      logWarn("Runtime unavailable", error);
+    }
   } finally {
     syncInFlight = false;
   }
@@ -353,7 +439,10 @@ async function fetchLatestAcceptedSubmission() {
     });
     await syncBundle(bundle);
   } catch (error) {
-    logWarn("Failed to fetch latest accepted submission bundle.", error);
+    logSubmissionFetchIssue(
+      "Failed to fetch latest accepted submission bundle.",
+      error
+    );
   }
 }
 
@@ -377,8 +466,115 @@ async function fetchCurrentSubmissionById() {
     });
     await syncBundle(bundle);
   } catch (error) {
-    logDebug("Current submission detail was not fetched.", error);
+    logSubmissionFetchIssue(
+      "Failed to fetch submission bundle by id, falling back to latest accepted.",
+      error
+    );
+
+    try {
+      const fallbackBundle = await bridgeRequest(
+        "GET_LATEST_ACCEPTED_SUBMISSION_BUNDLE",
+        { slug }
+      );
+      await syncBundle(fallbackBundle);
+    } catch (fallbackError) {
+      logSubmissionFetchIssue(
+        "Failed fallback latest accepted submission fetch.",
+        fallbackError
+      );
+    }
   }
+}
+
+async function runAutoSyncForCurrentRoute(reason: string) {
+  if (!isSupportedPage()) {
+    return;
+  }
+
+  const submissionId = getSubmissionIdFromUrl();
+
+  logDebug("auto sync check", {
+    reason,
+    href: window.location.href,
+    submissionId
+  });
+
+  if (submissionId) {
+    if (
+      submissionId === lastObservedSubmissionId &&
+      lastSuccessfulFingerprint
+    ) {
+      logDebug("submission page already handled, skipping", {
+        submissionId
+      });
+      return;
+    }
+
+    await fetchCurrentSubmissionById();
+  }
+}
+
+function scheduleAutoSync(reason: string, delayMs: number) {
+  if (autoSyncTimerId !== null) {
+    window.clearTimeout(autoSyncTimerId);
+  }
+
+  autoSyncTimerId = window.setTimeout(() => {
+    autoSyncTimerId = null;
+    void runAutoSyncForCurrentRoute(reason);
+  }, delayMs);
+}
+
+function notifyRouteMaybeChanged(reason: string) {
+  const href = window.location.href;
+  if (href === lastObservedUrl) {
+    return;
+  }
+
+  lastObservedUrl = href;
+  logInfo("route changed", { reason, href });
+  scheduleAutoSync(reason, ROUTE_SYNC_DELAY_MS);
+}
+
+function installRouteObservers() {
+  const originalPushState = history.pushState.bind(history);
+  const originalReplaceState = history.replaceState.bind(history);
+
+  history.pushState = function (...args: Parameters<History["pushState"]>) {
+    originalPushState(...args);
+    notifyRouteMaybeChanged("pushState");
+  };
+
+  history.replaceState = function (...args: Parameters<History["replaceState"]>) {
+    originalReplaceState(...args);
+    notifyRouteMaybeChanged("replaceState");
+  };
+
+  window.addEventListener("popstate", () => {
+    notifyRouteMaybeChanged("popstate");
+  });
+
+  window.addEventListener("hashchange", () => {
+    notifyRouteMaybeChanged("hashchange");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      notifyRouteMaybeChanged("visibilitychange");
+      if (isSubmissionPage()) {
+        scheduleAutoSync("visibility_submission_page", 400);
+      }
+    }
+  });
+
+  const observer = new MutationObserver(() => {
+    notifyRouteMaybeChanged("mutation");
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -399,18 +595,12 @@ function init() {
     path: window.location.pathname
   });
 
-  if (!isSupportedPage()) {
-    logDebug("unsupported page");
-    return;
-  }
+  if (!isSupportedPage()) return;
 
   injectPageScript();
   window.addEventListener("message", handleBridgeResponse);
-
-  // Useful for re-opening a submission detail page directly.
-  window.setTimeout(() => {
-    void fetchCurrentSubmissionById();
-  }, 1200);
+  installRouteObservers();
+  scheduleAutoSync("initial", INITIAL_SYNC_DELAY_MS);
 }
 
 init();

@@ -64,6 +64,15 @@ export interface SyncRecord {
   memoryPercentile?: number;
 }
 
+export interface SyncState {
+  status: "idle" | "syncing" | "error";
+  startedAt?: string;
+  title?: string;
+  difficulty?: Difficulty;
+  submissionId?: string;
+  error?: string;
+}
+
 export interface DashboardStats {
   totalSolved: number;
   easyCount: number;
