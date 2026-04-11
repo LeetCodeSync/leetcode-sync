@@ -330,6 +330,35 @@ function toPayload(bundle: SubmissionBundle): SubmissionPayload {
   };
 }
 
+function isExpectedNoAcceptedSubmissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message ?? "";
+
+  return (
+    /No fresh accepted submission found/i.test(message) ||
+    /Submission detail never became stable/i.test(message)
+  );
+}
+
+function isExpectedRuntimeInvalidationError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Extension context invalidated/i.test(error.message ?? "")
+  );
+}
+
+function logSubmissionFetchIssue(message: string, error: unknown) {
+  if (isExpectedNoAcceptedSubmissionError(error)) {
+    logDebug(message, error);
+    return;
+  }
+
+  logWarn(message, error);
+}
+
 async function syncBundle(bundle: SubmissionBundle) {
   const payload = toPayload(bundle);
   const fingerprint = buildFingerprint(payload);
@@ -381,7 +410,11 @@ async function syncBundle(bundle: SubmissionBundle) {
 
     logWarn(response?.error ?? "Sync failed.");
   } catch (error) {
-    logWarn("Runtime unavailable", error);
+    if (isExpectedRuntimeInvalidationError(error)) {
+      logDebug("Runtime unavailable after extension reload", error);
+    } else {
+      logWarn("Runtime unavailable", error);
+    }
   } finally {
     syncInFlight = false;
   }
@@ -405,7 +438,10 @@ async function fetchLatestAcceptedSubmission() {
     });
     await syncBundle(bundle);
   } catch (error) {
-    logWarn("Failed to fetch latest accepted submission bundle.", error);
+    logSubmissionFetchIssue(
+      "Failed to fetch latest accepted submission bundle.",
+      error
+    );
   }
 }
 
@@ -429,7 +465,7 @@ async function fetchCurrentSubmissionById() {
     });
     await syncBundle(bundle);
   } catch (error) {
-    logWarn(
+    logSubmissionFetchIssue(
       "Failed to fetch submission bundle by id, falling back to latest accepted.",
       error
     );
@@ -441,7 +477,10 @@ async function fetchCurrentSubmissionById() {
       );
       await syncBundle(fallbackBundle);
     } catch (fallbackError) {
-      logWarn("Failed fallback latest accepted submission fetch.", fallbackError);
+      logSubmissionFetchIssue(
+        "Failed fallback latest accepted submission fetch.",
+        fallbackError
+      );
     }
   }
 }
