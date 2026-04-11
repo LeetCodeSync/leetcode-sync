@@ -339,6 +339,7 @@ function isExpectedNoAcceptedSubmissionError(error: unknown): boolean {
 
   return (
     /No fresh accepted submission found/i.test(message) ||
+    /Submission detail not ready before timeout/i.test(message) ||
     /Submission detail never became stable/i.test(message)
   );
 }

@@ -51,6 +51,15 @@
       .trimEnd();
   }
 
+  function getCsrfToken(): string {
+    return (
+      document.cookie
+        .split("; ")
+        .find((part) => part.startsWith("csrftoken="))
+        ?.split("=")[1] ?? ""
+    );
+  }
+
   async function graphqlRequest<T>(
     operationName: string,
     query: string,
@@ -61,11 +70,7 @@
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "x-csrftoken":
-          document.cookie
-            .split("; ")
-            .find((part) => part.startsWith("csrftoken="))
-            ?.split("=")[1] ?? ""
+        "x-csrftoken": getCsrfToken()
       },
       body: JSON.stringify({
         operationName,
@@ -264,7 +269,7 @@
     return Date.now() - millis <= 10 * 60 * 1000;
   }
 
-  async function sleep(ms: number) {
+  async function sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -283,7 +288,6 @@
           ...submission,
           code: normalizedCode
         };
-
         return lastAcceptedWithCode;
       }
 
