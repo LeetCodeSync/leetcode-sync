@@ -12,6 +12,56 @@ import type {
 } from "../types";
 
 const GITHUB_API_URL = "https://api.github.com";
+const MAX_FAST_FORWARD_RETRIES = 4;
+const FAST_FORWARD_RETRY_BASE_DELAY_MS = 300;
+const FAST_FORWARD_RETRY_JITTER_MS = 400;
+
+const branchQueues = new Map<string, Promise<void>>();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getBranchQueueKey(owner: string, repo: string, branch: string): string {
+  return `${owner}/${repo}/${branch}`;
+}
+
+async function runExclusivePerBranch<T>(
+  key: string,
+  task: () => Promise<T>
+): Promise<T> {
+  const previous = branchQueues.get(key) ?? Promise.resolve();
+
+  let releaseCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+
+  branchQueues.set(
+    key,
+    previous.catch(() => undefined).then(() => current)
+  );
+
+  await previous.catch(() => undefined);
+
+  try {
+    return await task();
+  } finally {
+    releaseCurrent();
+
+    if (branchQueues.get(key) === current) {
+      branchQueues.delete(key);
+    }
+  }
+}
+
+function computeFastForwardRetryDelayMs(attempt: number): number {
+  const base = FAST_FORWARD_RETRY_BASE_DELAY_MS * attempt;
+  const jitter = Math.floor(Math.random() * FAST_FORWARD_RETRY_JITTER_MS);
+  return base + jitter;
+}
 
 export function parseGitHubRepoUrl(repositoryUrl: string): {
   owner: string;
@@ -425,6 +475,51 @@ function isFastForwardConflict(error: unknown): boolean {
   return error instanceof AppError && error.code === "FAST_FORWARD_CONFLICT";
 }
 
+async function commitSubmissionWithRetry(params: {
+  token: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  submission: SubmissionPayload;
+}): Promise<{ commitSha: string; repoPath: string }> {
+  const { owner, repo, branch, submission } = params;
+
+  for (let attempt = 1; attempt <= MAX_FAST_FORWARD_RETRIES; attempt += 1) {
+    try {
+      return await createCommitAttempt(params);
+    } catch (error) {
+      if (!isFastForwardConflict(error)) {
+        throw error;
+      }
+
+      if (attempt === MAX_FAST_FORWARD_RETRIES) {
+        throw error;
+      }
+
+      const delayMs = computeFastForwardRetryDelayMs(attempt);
+
+      logger.warn("github", "fast-forward conflict detected, retrying", {
+        owner,
+        repo,
+        branch,
+        slug: submission.slug,
+        submissionId: submission.submissionId,
+        attempt,
+        maxAttempts: MAX_FAST_FORWARD_RETRIES,
+        delayMs
+      });
+
+      await sleep(delayMs);
+    }
+  }
+
+  throw new AppError(
+    "UNKNOWN",
+    "GitHub sync failed. Please try again.",
+    "Commit retry loop exited unexpectedly."
+  );
+}
+
 export async function commitSubmission(params: {
   token: string;
   settings: ExtensionSettings;
@@ -443,33 +538,19 @@ export async function commitSubmission(params: {
   }
 
   const { owner, repo } = parsed;
+  const queueKey = getBranchQueueKey(owner, repo, settings.repoBranch);
 
-  try {
-    return await createCommitAttempt({
+  return await runExclusivePerBranch(queueKey, async () => {
+    return await commitSubmissionWithRetry({
       token,
       owner,
       repo,
       branch: settings.repoBranch,
       submission
     });
-  } catch (error) {
-    if (!isFastForwardConflict(error)) {
-      throw error;
-    }
+  });
+}
 
-    logger.warn("github", "fast-forward conflict detected, retrying once", {
-      repositoryUrl: settings.repositoryUrl,
-      branch: settings.repoBranch,
-      slug: submission.slug,
-      submissionId: submission.submissionId
-    });
-
-    return await createCommitAttempt({
-      token,
-      owner,
-      repo,
-      branch: settings.repoBranch,
-      submission
-    });
-  }
+export function __resetGitHubQueueStateForTests(): void {
+  branchQueues.clear();
 }
