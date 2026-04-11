@@ -471,6 +471,12 @@ export async function handleRuntimeMessage(
       return;
     }
 
+    if (message.type === "SET_SYNC_STATE") {
+      await setSyncState(message.payload as SyncState);
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (message.type === "GET_DASHBOARD_STATS") {
       sendResponse({ ok: true, data: await getDashboardStats() });
       return;
