@@ -261,38 +261,30 @@
       Number.isFinite(numeric) && numeric > 0 ? numeric * 1000 : Date.parse(timestamp);
 
     if (!Number.isFinite(millis)) return true;
-    return Date.now() - millis <= 5 * 60 * 1000;
+    return Date.now() - millis <= 10 * 60 * 1000;
   }
 
   async function sleep(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function waitForStableAcceptedSubmissionDetail(
+  async function waitForAcceptedSubmissionDetail(
     submissionId: string
   ): Promise<SubmissionBundle["submission"]> {
-    const delays = [700, 1200, 1800, 2500, 3000, 3000];
-    let previousStableCandidate = "";
-    let stableCount = 0;
+    const delays = [700, 1200, 1800, 2500, 3000, 3500, 4000, 4000];
+    let lastAcceptedWithCode: SubmissionBundle["submission"] | null = null;
 
     for (let attempt = 0; attempt <= delays.length; attempt += 1) {
       const submission = await fetchSubmissionDetail(submissionId);
       const normalizedCode = normalizeCode(submission.code);
 
       if (submission.accepted && normalizedCode) {
-        if (normalizedCode === previousStableCandidate) {
-          stableCount += 1;
-        } else {
-          previousStableCandidate = normalizedCode;
-          stableCount = 1;
-        }
+        lastAcceptedWithCode = {
+          ...submission,
+          code: normalizedCode
+        };
 
-        if (stableCount >= 2) {
-          return {
-            ...submission,
-            code: normalizedCode
-          };
-        }
+        return lastAcceptedWithCode;
       }
 
       if (attempt < delays.length) {
@@ -300,13 +292,17 @@
       }
     }
 
-    throw new Error("Submission detail never became stable");
+    if (lastAcceptedWithCode) {
+      return lastAcceptedWithCode;
+    }
+
+    throw new Error("Submission detail not ready before timeout");
   }
 
   async function getLatestAcceptedSubmissionBundle(
     slug: string
   ): Promise<SubmissionBundle> {
-    const summaryDelays = [500, 1000, 1500, 2000, 2500, 3000];
+    const summaryDelays = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000];
 
     for (let attempt = 0; attempt <= summaryDelays.length; attempt += 1) {
       const summary = await fetchLatestAcceptedSubmissionSummary(slug);
@@ -314,7 +310,7 @@
       if (summary?.id && isFreshAcceptedSubmission(summary.timestamp)) {
         const [question, submission] = await Promise.all([
           fetchQuestion(slug),
-          waitForStableAcceptedSubmissionDetail(summary.id)
+          waitForAcceptedSubmissionDetail(summary.id)
         ]);
 
         return {
@@ -337,7 +333,7 @@
   ): Promise<SubmissionBundle> {
     const [question, submission] = await Promise.all([
       fetchQuestion(slug),
-      waitForStableAcceptedSubmissionDetail(submissionId)
+      waitForAcceptedSubmissionDetail(submissionId)
     ]);
 
     return {
