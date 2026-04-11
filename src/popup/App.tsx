@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSyncAcceptedOnly: true
 };
 
-const ISSUES_URL = "https://github.com/LeetCodeSync/leetcode-sync/issues";
+const ISSUES_URL = "https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose";
 
 function formatRelativeTime(value?: string): string {
   if (!value) return "—";
