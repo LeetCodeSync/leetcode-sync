@@ -4,41 +4,42 @@ LeetCode Sync is a Chrome extension that syncs accepted LeetCode submissions to 
 
 ## Data processed
 
-LeetCode Sync may process the following data as part of its operation:
+LeetCode Sync processes the following data as part of its operation:
 
 - GitHub OAuth App Client ID entered by the user
-- repository URL, selected branch, and sync preferences
-- authentication and session data required for GitHub device authorization
-- LeetCode problem, submission, and accepted solution content needed for syncing
+- Repository URL and selected branch
+- Authentication/session data required to complete GitHub device authorization and perform repository operations
+- LeetCode problem and accepted submission content required to create the commit (for example: problem identifier/slug, language, and the submitted solution code)
 
 ## How data is used
 
 This data is used only to:
 
-- detect accepted LeetCode submissions
-- connect the user's GitHub account through device authorization
-- create commits and write files to the user-configured GitHub repository
-- store extension settings and session state across browser sessions
+- Detect when a LeetCode submission completes with an **Accepted** result
+- Connect the user’s GitHub account through the GitHub device authorization flow
+- Create commits and write files to the user-configured GitHub repository
+- Store extension settings and session state locally to persist configuration across browser sessions
 
 ## Data sharing
 
-LeetCode Sync sends data only to GitHub services required for authentication and repository operations.
+LeetCode Sync sends data only to the services required for its single purpose:
+
+- GitHub (authorization pages and API) to authenticate and write commits to the user’s repository
 
 LeetCode Sync does not sell user data.
 LeetCode Sync does not use user data for advertising.
-LeetCode Sync does not use user data for profiling, tracking, or purposes unrelated to the extension's single purpose.
+LeetCode Sync does not use user data for profiling, tracking, or purposes unrelated to the extension’s single purpose.
 
 ## Local storage
 
-The extension stores settings and session state locally in the browser, including repository configuration, branch selection, sync preferences, and authentication/session data needed for operation.
+The extension stores configuration and session state locally in the browser, including repository configuration, branch selection, and authentication/session data required for operation.
 
 ## Permissions
 
-LeetCode Sync uses the following permissions:
+LeetCode Sync uses the following Chrome permissions:
 
-- `storage` to save settings and session state
-- `tabs` to identify the current tab and confirm supported LeetCode pages
-- `webRequest` to observe relevant submission-related request and response activity
+- `storage` to save settings and session state locally
+- `webRequest` to observe LeetCode submission-related network requests needed to detect when an accepted submission is available for syncing
 
 It also uses host permissions for:
 
@@ -57,4 +58,4 @@ This policy may be updated from time to time. Any changes will be published in t
 ## Contact
 
 For support, bug reports, or feature requests, visit:
-[https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose](https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose)
+https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose

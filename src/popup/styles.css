@@ -805,7 +805,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 8px;
+  padding-top: 14px;
 }
 
 .modal-actions--sheet {

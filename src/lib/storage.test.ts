@@ -47,7 +47,6 @@ describe("src/lib/storage.ts", () => {
       githubScope: "repo",
       repositoryUrl: "",
       repoBranch: "main",
-      autoSyncAcceptedOnly: true
     });
   });
 
@@ -64,7 +63,6 @@ describe("src/lib/storage.ts", () => {
       githubScope: "repo",
       repositoryUrl: "https://github.com/LeetCodeSync/leetcode-private",
       repoBranch: "main",
-      autoSyncAcceptedOnly: true
     });
   });
 
@@ -74,7 +72,6 @@ describe("src/lib/storage.ts", () => {
       githubScope: "public_repo",
       repositoryUrl: "https://github.com/LeetCodeSync/leetcode-public",
       repoBranch: "main",
-      autoSyncAcceptedOnly: false
     };
 
     await saveSettings(settings);

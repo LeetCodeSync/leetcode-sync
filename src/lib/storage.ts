@@ -18,7 +18,6 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   githubScope: "repo",
   repositoryUrl: "",
   repoBranch: "main",
-  autoSyncAcceptedOnly: true
 };
 
 const DEFAULT_SYNC_STATE: SyncState = {

@@ -37,7 +37,6 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   githubScope: "repo",
   repositoryUrl: "",
   repoBranch: "main",
-  autoSyncAcceptedOnly: true
 };
 
 const ISSUES_URL = "https://github.com/LeetCodeSync/leetcode-sync/issues/new/choose";
@@ -766,25 +765,6 @@ export default function App() {
                         "githubScope",
                         event.target.checked ? "repo" : "public_repo"
                       )
-                    }
-                  />
-                  <span className="toggle-switch__track" />
-                </label>
-              </div>
-
-              <div className="settings-row settings-row--toggle">
-                <div className="settings-row__main">
-                  <div className="settings-row__label">Sync accepted submissions only</div>
-                  <div className="settings-row__hint">
-                    Recommended for normal use.
-                  </div>
-                </div>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoSyncAcceptedOnly}
-                    onChange={(event) =>
-                      updateSetting("autoSyncAcceptedOnly", event.target.checked)
                     }
                   />
                   <span className="toggle-switch__track" />
