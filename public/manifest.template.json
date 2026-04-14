@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LeetCode Sync",
   "version": "__APP_VERSION__",
-  "description": "LeetCode Sync saves LeetCode submissions to your GitHub repository.",
+  "description": "LeetCode Sync automatically saves accepted LeetCode submissions to your GitHub repository.",
   "permissions": ["storage", "webRequest"],
   "host_permissions": [
     "https://leetcode.com/*",
