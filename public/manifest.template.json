@@ -3,7 +3,7 @@
   "name": "LeetCode Sync",
   "version": "__APP_VERSION__",
   "description": "Sync accepted LeetCode submissions into a GitHub repository.",
-  "permissions": ["storage", "webRequest", "tabs"],
+  "permissions": ["storage", "webRequest"],
   "host_permissions": [
     "https://leetcode.com/*",
     "https://github.com/*",
