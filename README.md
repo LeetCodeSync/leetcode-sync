@@ -12,7 +12,7 @@ LeetCode Sync is a Chrome extension that automatically syncs accepted LeetCode s
 
 ## Why LeetCode Sync
 
-Keeping LeetCode solutions in GitHub is useful for long-term tracking, backups, and portfolio visibility, but doing it manually is repetitive and easy to forget.
+Keeping LeetCode solutions in GitHub is useful for long-term tracking, backups, and personal archive, but doing it manually is repetitive and easy to forget.
 
 LeetCode Sync automates that flow. Once configured, it detects accepted submissions, collects the required solution data, and writes the result to your GitHub repository.
 
@@ -20,8 +20,8 @@ LeetCode Sync automates that flow. Once configured, it detects accepted submissi
 
 - Automatic sync for accepted LeetCode submissions
 - Support for public and private GitHub repositories
-- GitHub Device Flow authentication
-- Configurable repository URL, branch, and sync behavior
+- GitHub Device Flow authentication (no PAT required)
+- Configurable repository URL, branch, and private repository access
 - Clean popup dashboard with recent sync activity and counters
 - Built for a narrow single purpose with minimal required permissions
 
@@ -30,7 +30,7 @@ LeetCode Sync automates that flow. Once configured, it detects accepted submissi
 1. Configure the extension with your GitHub OAuth App Client ID, repository URL, and branch.
 2. Connect GitHub using the device authorization flow.
 3. Submit a solution on LeetCode.
-4. When the submission is accepted, the extension syncs the solution and related metadata to your GitHub repository.
+4. When the submission is accepted, the extension syncs the solution and a README summary to your GitHub repository.
 
 ## Requirements
 
@@ -69,7 +69,6 @@ Open the extension settings and enter:
 - Repository URL
 - Branch
 - Private repository access, if needed
-- Sync accepted submissions only, recommended
 
 Save the settings.
 
@@ -102,7 +101,6 @@ LeetCode Sync requests only the permissions required for its core functionality.
 ### Chrome permissions
 
 - `storage` to save settings and session state
-- `tabs` to confirm the active page context
 - `webRequest` to observe relevant submission-related request and response activity
 
 ### Host permissions
@@ -152,7 +150,7 @@ Suggested areas to review in the codebase:
 - content script and injected page bridge
 - GitHub device authorization flow
 - repository write logic
-- local storage and sync preferences
+- local storage and settings
 
 ## Limitations
 
