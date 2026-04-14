@@ -3,7 +3,6 @@ export interface ExtensionSettings {
   githubScope: "public_repo" | "repo";
   repositoryUrl: string;
   repoBranch: string;
-  autoSyncAcceptedOnly: boolean;
 }
 
 export interface GitHubAuthSession {

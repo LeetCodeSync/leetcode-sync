@@ -65,7 +65,6 @@ const DEFAULT_SETTINGS: ExtensionSettings = {
   githubScope: "repo",
   repositoryUrl: "https://github.com/pshynin/leetcode-private",
   repoBranch: "main",
-  autoSyncAcceptedOnly: true
 };
 
 const DEFAULT_SESSION: GitHubAuthSession = {

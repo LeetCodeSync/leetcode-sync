@@ -11,7 +11,6 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   githubScope: "repo",
   repositoryUrl: "",
   repoBranch: "main",
-  autoSyncAcceptedOnly: true
 };
 
 export const GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code";

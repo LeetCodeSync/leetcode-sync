@@ -272,7 +272,7 @@ export async function syncSubmission(
     };
   }
 
-  if (settings.autoSyncAcceptedOnly && !submission.accepted) {
+  if (!submission.accepted) {
     logger.info("background", "submission skipped because not accepted");
     return { ok: true };
   }
